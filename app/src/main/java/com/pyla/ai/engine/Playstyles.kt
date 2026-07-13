@@ -103,9 +103,29 @@ internal object PlaystyleCombat {
         }
         movementOptions.firstOrNull { !play.isPathBlocked(ctx.playerData, it, ctx.walls) }?.let { return it }
 
-        val alternatives = cardinalMoves().toMutableList().apply { shuffle(Random) }
+        val alternatives = allMoves().toMutableList().apply { shuffle(Random) }
         return alternatives.firstOrNull { !play.isPathBlocked(ctx.playerData, it, ctx.walls) }
-            ?: movementOptions[0]
+            ?: safeRandom(ctx)
+    }
+
+    fun allMoves(): List<Pair<Double, Double>> {
+        val r = PylaUtils.JOYSTICK_RADIUS.toDouble()
+        val d = r * 0.7071
+        return listOf(
+            0.0 to -r, r to -r, r to 0.0, r to r,
+            0.0 to r, -r to r, -r to 0.0, -r to -r,
+        )
+    }
+
+    fun safeRandom(ctx: PlayContext): Pair<Double, Double> {
+        val r = PylaUtils.JOYSTICK_RADIUS.toDouble()
+        val options = allMoves().toMutableList().apply { shuffle(Random) }
+        for (m in options) {
+            if (!ctx.play.isPathBlocked(ctx.playerData, m, ctx.walls)) return m
+        }
+        val angle = Random.nextDouble(0.0, Math.PI * 2)
+        val dist = Random.nextDouble(r * 0.3, r)
+        return (Math.cos(angle) * dist) to (Math.sin(angle) * dist)
     }
 
     fun cardinalMoves(): List<Pair<Double, Double>> = listOf(
@@ -171,10 +191,10 @@ object DefaultPylaPlaystyle : Playstyle {
 
     private fun noEnemyMovement(ctx: PlayContext): Pair<Double, Double> {
         if (!ctx.play.isPathBlocked(ctx.playerData, preferredMove, ctx.walls)) return preferredMove
-        val alternatives = PlaystyleCombat.cardinalMoves().toMutableList()
-            .apply { remove(preferredMove); shuffle(Random) }
+        val alternatives = PlaystyleCombat.allMoves().toMutableList()
+            .apply { remove(preferredMove); remove(0.0 to PylaUtils.JOYSTICK_RADIUS.toDouble()); shuffle(Random) }
         return alternatives.firstOrNull { !ctx.play.isPathBlocked(ctx.playerData, it, ctx.walls) }
-            ?: preferredMove
+            ?: PlaystyleCombat.safeRandom(ctx)
     }
 }
 
@@ -187,14 +207,17 @@ object ShowdownFollowerPlaystyle : Playstyle {
     override fun computeMovement(ctx: PlayContext): Pair<Double, Double> {
         PlaystyleCombat.releaseHeldAttackIfExpired(ctx)
         val playerPos = ctx.play.getEntityPos(ctx.playerData)
-
         val antiGas = PlaystyleCombat.avoidPoisonGas(ctx)
 
         if (ctx.enemyData.isEmpty()) return antiGas ?: noEnemyMovement(ctx, playerPos)
         val (enemyCoords, enemyDistance) = ctx.play.findClosestEnemy(ctx.enemyData, playerPos, ctx.walls, "attack")
         if (enemyCoords == null || enemyDistance == null) return antiGas ?: noEnemyMovement(ctx, playerPos)
 
-        val movement = antiGas ?: enemyMovement(ctx, playerPos, enemyCoords, enemyDistance)
+        if (antiGas != null) {
+            PlaystyleCombat.engageEnemy(ctx, playerPos, enemyCoords, enemyDistance)
+            return antiGas
+        }
+        val movement = enemyMovement(ctx, playerPos, enemyCoords, enemyDistance)
         PlaystyleCombat.engageEnemy(ctx, playerPos, enemyCoords, enemyDistance)
         return movement
     }
@@ -211,8 +234,8 @@ object ShowdownFollowerPlaystyle : Playstyle {
             listOf(-dx to -dy, 0.0 to -dy, -dx to 0.0)
         }
         movementOptions.firstOrNull { !play.isPathBlocked(ctx.playerData, it, ctx.walls) }?.let { return it }
-        PlaystyleCombat.cardinalMoves().firstOrNull { !play.isPathBlocked(ctx.playerData, it, ctx.walls) }?.let { return it }
-        return movementOptions[0]
+        PlaystyleCombat.allMoves().shuffled(Random).firstOrNull { !play.isPathBlocked(ctx.playerData, it, ctx.walls) }?.let { return it }
+        return PlaystyleCombat.safeRandom(ctx)
     }
 
     private fun noEnemyMovement(ctx: PlayContext, playerPos: Pair<Double, Double>): Pair<Double, Double> {
@@ -235,7 +258,9 @@ object ShowdownFollowerPlaystyle : Playstyle {
                 val options = listOf(bx to by, bx to 0.0, 0.0 to by)
                 options.firstOrNull { !play.isPathBlocked(ctx.playerData, it, ctx.walls) }?.let { return it }
             }
-            return 0.0 to -r
+            val forward = 0.0 to -r
+            if (!play.isPathBlocked(ctx.playerData, forward, ctx.walls)) return forward
+            return PlaystyleCombat.safeRandom(ctx)
         }
         if (teammateDistance != null && teammateDistance <= 60.0) return 0.0 to 0.0
 
@@ -243,8 +268,8 @@ object ShowdownFollowerPlaystyle : Playstyle {
         val dy = teammate.second - playerPos.second
         val movementOptions = listOf(dx to dy, dx to 0.0, 0.0 to dy)
         movementOptions.firstOrNull { !play.isPathBlocked(ctx.playerData, it, ctx.walls) }?.let { return it }
-        PlaystyleCombat.cardinalMoves().firstOrNull { !play.isPathBlocked(ctx.playerData, it, ctx.walls) }?.let { return it }
-        return movementOptions[0]
+        PlaystyleCombat.allMoves().shuffled(Random).firstOrNull { !play.isPathBlocked(ctx.playerData, it, ctx.walls) }?.let { return it }
+        return PlaystyleCombat.safeRandom(ctx)
     }
 }
 

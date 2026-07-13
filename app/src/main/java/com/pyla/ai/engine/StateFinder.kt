@@ -189,16 +189,16 @@ object StateFinder {
 
     fun getState(screenshot: Mat): String {
         findGameResult(screenshot)?.let { PylaLog.p(TAG, "State: end_$it (${screenshot.cols()}x${screenshot.rows()})"); BotStatus.currentState = "end_$it"; return "end_$it" }
+        if (inNanoNoodles(screenshot)) { PylaLog.p(TAG, "State: nano_noodles"); BotStatus.currentState = "nano_noodles"; return "nano_noodles" }
+        inStarDrop(screenshot)?.let { PylaLog.p(TAG, "State: star_drop_$it"); BotStatus.currentState = "star_drop_$it"; return "star_drop_$it" }
+        if (inTrophyReward(screenshot)) { PylaLog.p(TAG, "State: trophy_reward"); BotStatus.currentState = "trophy_reward"; return "trophy_reward" }
+        if (inPrestigeMilestone(screenshot)) { PylaLog.p(TAG, "State: prestige_milestone"); BotStatus.currentState = "prestige_milestone"; return "prestige_milestone" }
         if (inLobby(screenshot)) { PylaLog.p(TAG, "State: lobby"); BotStatus.currentState = "lobby"; return "lobby" }
         if (inMatchMaking(screenshot)) { PylaLog.p(TAG, "State: match_making"); BotStatus.currentState = "match_making"; return "match_making" }
         if (inBrawlerSelection(screenshot)) { PylaLog.p(TAG, "State: brawler_selection"); BotStatus.currentState = "brawler_selection"; return "brawler_selection" }
         if (inShop(screenshot)) { PylaLog.p(TAG, "State: shop"); BotStatus.currentState = "shop"; return "shop" }
         if (inOfferPopup(screenshot)) { PylaLog.p(TAG, "State: popup"); BotStatus.currentState = "popup"; return "popup" }
         if (inBrawlPass(screenshot) || inStarRoad(screenshot)) { PylaLog.p(TAG, "State: shop (brawl_pass/star_road)"); BotStatus.currentState = "shop"; return "shop" }
-        if (inPrestigeMilestone(screenshot)) { PylaLog.p(TAG, "State: prestige_milestone"); BotStatus.currentState = "prestige_milestone"; return "prestige_milestone" }
-        if (inNanoNoodles(screenshot)) { PylaLog.p(TAG, "State: nano_noodles"); BotStatus.currentState = "nano_noodles"; return "nano_noodles" }
-        inStarDrop(screenshot)?.let { PylaLog.p(TAG, "State: star_drop_$it"); BotStatus.currentState = "star_drop_$it"; return "star_drop_$it" }
-        if (inTrophyReward(screenshot)) { PylaLog.p(TAG, "State: trophy_reward"); BotStatus.currentState = "trophy_reward"; return "trophy_reward" }
         PylaLog.p(TAG, "State: match (default, nothing matched)")
         BotStatus.currentState = "match"
         return "match"

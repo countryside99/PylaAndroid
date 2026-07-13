@@ -197,20 +197,20 @@ class InputService : AccessibilityService() {
                     gestureInFlight = false
                     pump()
                 }
-                override fun onCancelled(g: GestureDescription?) {
-                    joystickCh.reset(); attackCh.reset()
-                    gestureInFlight = false
-                    pump()
-                }
-            }, handler)
-        } catch (t: Throwable) {
-            PylaLog.w(TAG, "dispatch failed: ${t.message}")
-            false
-        }
-        if (!accepted) {
+        override fun onCancelled(g: GestureDescription?) {
+            attackCh.reset()
             gestureInFlight = false
-            channels.forEach { it.reset() }
+            pump()
         }
+    }, handler)
+} catch (t: Throwable) {
+    PylaLog.w(TAG, "dispatch failed: ${t.message}")
+    false
+}
+if (!accepted) {
+    gestureInFlight = false
+    attackCh.reset()
+}
     }
 
     private fun sx(v: Float): Float = InputCoordinates.toScreenX(v)
