@@ -92,6 +92,14 @@ class WindowController(
         input.swipeAt(x1, y1, x2, y2, durationMs)
     }
 
+    fun releaseAndTap(x: Float, y: Float, holdMs: Long = 40) {
+        val input = InputService.get()
+        if (input == null) { PylaLog.w(TAG, "releaseAndTap ignored: InputService not connected"); return }
+        PylaLog.p(TAG, "releaseAndTap at ($x,$y) hold=${holdMs}ms")
+        input.releaseJoystick()
+        input.tapAt(x, y, holdMs)
+    }
+
     fun click(x: Float, y: Float, delayMs: Long = 20, touchUp: Boolean = true, touchDown: Boolean = true) {
         val input = InputService.get()
         if (input == null) { PylaLog.w(TAG, "click ignored: InputService not connected"); return }
@@ -115,14 +123,17 @@ class WindowController(
         PylaLog.p(TAG, "press '$key' at ($bx,$by) hold=${delayMs}ms up=$touchUp down=$touchDown")
         BotStatus.action("press '$key' at ($bx,$by)")
         BotStatus.inputConnected = com.pyla.ai.input.InputService.isConnected()
-        if (touchDown && touchUp && key in COMBAT_KEYS) {
+        if (key in COMBAT_KEYS) {
             val input = InputService.get()
             if (input == null) { PylaLog.w(TAG, "press ignored: InputService not connected"); return }
-            input.pressAndRelease(bx.toFloat(), by.toFloat(), delayMs + 40)
+            if (touchDown && touchUp) {
+                input.pressAndRelease(bx.toFloat(), by.toFloat(), delayMs + 40)
+            } else {
+                click(bx.toFloat(), by.toFloat(), delayMs, touchUp, touchDown)
+            }
             return
         }
-        InputService.get()?.releaseJoystick()
-        click(bx.toFloat(), by.toFloat(), delayMs, touchUp, touchDown)
+        releaseAndTap(bx.toFloat(), by.toFloat(), delayMs + 20)
     }
 
     val joystickX: Float get() = InputCoordinates.joystick().first

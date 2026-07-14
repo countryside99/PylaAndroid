@@ -134,7 +134,7 @@ class StageManager(
             val y = 740 * hr
             val offset = 330 * hr
             for (x in listOf(cx, cx + offset, cx - offset)) {
-                windowController.click(x, y)
+                windowController.releaseAndTap(x, y)
                 try { Thread.sleep(500) } catch (_: InterruptedException) {}
             }
         } else {
@@ -146,7 +146,7 @@ class StageManager(
             )
             for (b in order) {
                 Log.i(TAG, "Clicking canister at (${b.first.toInt()},${b.second.toInt()})")
-                windowController.click(b.first.toFloat(), b.second.toFloat())
+                windowController.releaseAndTap(b.first.toFloat(), b.second.toFloat())
                 try { Thread.sleep(600) } catch (_: InterruptedException) {}
             }
         }
@@ -157,9 +157,9 @@ class StageManager(
         if (target != null) {
             Log.i(TAG, "Nano noodles: clicking the middle to open rewards (${target.first.toInt()},${target.second.toInt()})")
             BotStatus.action("Nano noodles: opening rewards")
-            windowController.click(target.first.toFloat(), target.second.toFloat())
+            windowController.releaseAndTap(target.first.toFloat(), target.second.toFloat())
             try { Thread.sleep(900) } catch (_: InterruptedException) {}
-            windowController.click(target.first.toFloat(), target.second.toFloat())
+            windowController.releaseAndTap(target.first.toFloat(), target.second.toFloat())
         }
         try { Thread.sleep(1200) } catch (_: InterruptedException) {}
     }

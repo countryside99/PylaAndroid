@@ -358,13 +358,28 @@ class Play(
     private fun boostToMinimumMagnitude(m: Pair<Double, Double>): Pair<Double, Double> {
         val mag = hypot(m.first, m.second)
         val minMag = PylaUtils.JOYSTICK_RADIUS * windowController.scaleFactor
-        if (mag >= minMag || mag < 0.01) return m
+        if (minMag <= 0.0) return m
+        if (mag >= minMag) return m
+        if (mag < 0.0001) {
+            val r = PylaUtils.JOYSTICK_RADIUS.toDouble() * windowController.scaleFactor
+            val dirs = listOf(0.0 to -r, r to 0.0, 0.0 to r, -r to 0.0)
+            return dirs.random()
+        }
         val scale = minMag / mag
         return (m.first * scale) to (m.second * scale)
     }
 
     fun doMovement(movement: Pair<Double, Double>?) {
-        if (movement == null) { windowController.releaseMovement(); return }
+        if (movement == null) {
+            if (antiIdleEnabled) {
+                val r = PylaUtils.JOYSTICK_RADIUS.toDouble() * windowController.scaleFactor
+                val dirs = listOf(0.0 to -r, r to 0.0, 0.0 to r, -r to 0.0)
+                windowController.move(dirs.random().first.toFloat(), dirs.random().second.toFloat())
+                return
+            }
+            windowController.releaseMovement()
+            return
+        }
         windowController.move(movement.first.toFloat(), movement.second.toFloat())
     }
 
@@ -499,7 +514,7 @@ class Play(
 
         if (!hasPlayer || state != "match") {
             if (currentTime - timeSincePlayerLastFound > 1.0) {
-                if (antiIdleEnabled) {
+                if (antiIdleEnabled && state == "match") {
                     val r = PylaUtils.JOYSTICK_RADIUS.toDouble()
                     val dirs = listOf(0.0 to -r, r to 0.0, 0.0 to r, -r to 0.0)
                     doMovement(clampMovement(dirs.random()))

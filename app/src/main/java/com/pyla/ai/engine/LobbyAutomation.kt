@@ -105,9 +105,14 @@ class LobbyAutomation(val windowController: WindowController) {
             Log.i(TAG, "Brawlers menu label found at (${label.first},${label.second}), clicking it")
             windowController.click(label.first.toFloat(), label.second.toFloat())
         } else {
-            Log.i(TAG, "Brawlers menu label not readable, falling back to configured coordinates")
             val btn = lobbyConfig().getIntArray("lobby.brawler_btn")
-            if (btn.size >= 2) windowController.click(btn[0] * hr, btn[1] * hr)
+            if (btn.size >= 2) {
+                Log.i(TAG, "Brawlers menu using config coords (${btn[0]}, ${btn[1]})")
+                windowController.click(btn[0] * hr, btn[1] * hr)
+            } else {
+                Log.i(TAG, "Brawlers menu using default fallback coords (110, 490)")
+                windowController.click(110f * hr, 490f * hr)
+            }
         }
     }
 
@@ -118,9 +123,14 @@ class LobbyAutomation(val windowController: WindowController) {
             Log.i(TAG, "Select button found at (${label.first},${label.second}), clicking it")
             windowController.click(label.first.toFloat(), label.second.toFloat())
         } else {
-            Log.i(TAG, "Select button label not readable, falling back to configured coordinates")
             val sel = lobbyConfig().getIntArray("lobby.select_btn")
-            if (sel.size >= 2) windowController.click(sel[0] * hr, sel[1] * hr)
+            if (sel.size >= 2) {
+                Log.i(TAG, "Select button using config coords (${sel[0]}, ${sel[1]})")
+                windowController.click(sel[0] * hr, sel[1] * hr)
+            } else {
+                Log.i(TAG, "Select button using default fallback coords (150, 950)")
+                windowController.click(150f * hr, 950f * hr)
+            }
         }
     }
 

@@ -4,7 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val pylaRoot = layout.projectDirectory.dir("../..")
+val pylaRoot = layout.projectDirectory.dir("../PylaAI-OriginalPCVersion")
 
 tasks.register<Copy>("copyPylaAssets") {
     description = "Copy cfg/, models/, images/, playstyles/ from the Python project into app assets so they ship inside the APK."
