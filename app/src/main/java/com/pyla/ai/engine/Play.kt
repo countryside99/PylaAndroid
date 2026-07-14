@@ -355,6 +355,14 @@ class Play(
         return tx.toDouble() to ty.toDouble()
     }
 
+    private fun boostToMinimumMagnitude(m: Pair<Double, Double>): Pair<Double, Double> {
+        val mag = hypot(m.first, m.second)
+        val minMag = PylaUtils.JOYSTICK_RADIUS * windowController.scaleFactor
+        if (mag >= minMag || mag < 0.01) return m
+        val scale = minMag / mag
+        return (m.first * scale) to (m.second * scale)
+    }
+
     fun doMovement(movement: Pair<Double, Double>?) {
         if (movement == null) { windowController.releaseMovement(); return }
         windowController.move(movement.first.toFloat(), movement.second.toFloat())
@@ -491,7 +499,13 @@ class Play(
 
         if (!hasPlayer || state != "match") {
             if (currentTime - timeSincePlayerLastFound > 1.0) {
-                windowController.releaseMovement()
+                if (antiIdleEnabled) {
+                    val r = PylaUtils.JOYSTICK_RADIUS.toDouble()
+                    val dirs = listOf(0.0 to -r, r to 0.0, 0.0 to r, -r to 0.0)
+                    doMovement(clampMovement(dirs.random()))
+                } else {
+                    windowController.releaseMovement()
+                }
             }
             if (currentTime - timeSinceLastProceeding > noDetectionProceedDelaySec) {
                 val currentState = StateFinder.getState(frame)
@@ -560,6 +574,7 @@ class Play(
             move = dirs.random()
         }
         move = clampMovement(move)
+        move = boostToMinimumMagnitude(move)
         val currentTime = nowSec()
         if (move != lastMovement) {
             if (currentTime - lastMovementChangeTime >= minimumMovementDelay) {

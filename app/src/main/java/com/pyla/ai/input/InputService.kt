@@ -198,6 +198,7 @@ class InputService : AccessibilityService() {
                     pump()
                 }
         override fun onCancelled(g: GestureDescription?) {
+            joystickCh.reset()
             attackCh.reset()
             gestureInFlight = false
             pump()
@@ -209,6 +210,7 @@ class InputService : AccessibilityService() {
 }
 if (!accepted) {
     gestureInFlight = false
+    joystickCh.reset()
     attackCh.reset()
 }
     }

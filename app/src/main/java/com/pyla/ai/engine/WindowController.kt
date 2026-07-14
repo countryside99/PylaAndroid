@@ -121,6 +121,7 @@ class WindowController(
             input.pressAndRelease(bx.toFloat(), by.toFloat(), delayMs + 40)
             return
         }
+        InputService.get()?.releaseJoystick()
         click(bx.toFloat(), by.toFloat(), delayMs, touchUp, touchDown)
     }
 
