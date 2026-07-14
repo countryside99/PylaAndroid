@@ -25,53 +25,54 @@ class Play(
 ) {
     companion object { private const val TAG = "PylaPlay" }
 
-    private val botConfig: TomlLite = PylaConfig.load("cfg/bot_config.toml")
-    private val timeConfig: TomlLite = PylaConfig.load("cfg/time_tresholds.toml")
-    private val lobbyConfig: TomlLite = PylaConfig.load("cfg/lobby_config.toml")
+    private fun botConfig(): TomlLite = PylaConfig.load("cfg/bot_config.toml")
+    private fun timeConfig(): TomlLite = PylaConfig.load("cfg/time_tresholds.toml")
+    private fun lobbyConfig(): TomlLite = PylaConfig.load("cfg/lobby_config.toml")
 
-    private val superCropArea: List<Int> = lobbyConfig.getIntArray("pixel_counter_crop_area.super")
-    private val gadgetCropArea: List<Int> = lobbyConfig.getIntArray("pixel_counter_crop_area.gadget")
-    private val hyperchargeCropArea: List<Int> = lobbyConfig.getIntArray("pixel_counter_crop_area.hypercharge")
+    private val superCropArea: List<Int> get() = lobbyConfig().getIntArray("pixel_counter_crop_area.super")
+    private val gadgetCropArea: List<Int> get() = lobbyConfig().getIntArray("pixel_counter_crop_area.gadget")
+    private val hyperchargeCropArea: List<Int> get() = lobbyConfig().getIntArray("pixel_counter_crop_area.hypercharge")
 
-    private val verboseDebug: Boolean = PylaUtils.configBool(PylaConfig.load("cfg/debug_settings.toml").opt("verbose_debug"), false)
+    private val verboseDebug: Boolean get() = PylaUtils.configBool(PylaConfig.load("cfg/debug_settings.toml").opt("verbose_debug"), false)
 
     private val detectMainInfo: Detect = Detect(
         mainInfoModelPath,
         classes = listOf("enemy", "teammate", "player"),
     )
-    private val tileDetectorClasses: List<String> = botConfig.getStringList("wall_model_classes", listOf("wall", "bush", "close_bush"))
-    private val centeredWallDetection: Boolean = PylaUtils.configBool(botConfig.opt("centered_wall_detection"), false)
-    private val detectTileDetector: Detect? = if (!centeredWallDetection)
-        Detect(tileDetectorModelPath, classes = tileDetectorClasses) else null
-    private val detectCenteredTileDetector: Detect? = if (centeredWallDetection)
-        Detect(closeTileDetectorModelPath, classes = tileDetectorClasses) else null
+    private val tileDetectorClasses: List<String> get() = botConfig().getStringList("wall_model_classes", listOf("wall", "bush", "close_bush"))
+    private val centeredWallDetection: Boolean get() = PylaUtils.configBool(botConfig().opt("centered_wall_detection"), false)
+    private val detectTileDetector: Detect? = if (!PylaUtils.configBool(PylaConfig.load("cfg/bot_config.toml").opt("centered_wall_detection"), false))
+        Detect(tileDetectorModelPath, classes = botConfig().getStringList("wall_model_classes", listOf("wall", "bush", "close_bush"))) else null
+    private val detectCenteredTileDetector: Detect? = if (PylaUtils.configBool(PylaConfig.load("cfg/bot_config.toml").opt("centered_wall_detection"), false))
+        Detect(closeTileDetectorModelPath, classes = botConfig().getStringList("wall_model_classes", listOf("wall", "bush", "close_bush"))) else null
 
-    private val tileSize: Double = botConfig.getDouble("perceived_tile_size", 54.0)
+    private val tileSize: Double get() = botConfig().getDouble("perceived_tile_size", 54.0)
     val tileSizePx: Double get() = tileSize * windowController.scaleFactor
     private val centeredWallCropSize: Int = 640
 
-    private val superTresholdSec: Double = timeConfig.getDouble("super", 0.1)
-    private val gadgetTresholdSec: Double = timeConfig.getDouble("gadget", 0.1)
-    private val hyperchargeTresholdSec: Double = timeConfig.getDouble("hypercharge", 0.1)
-    private val wallsTresholdSec: Double = maxOf(timeConfig.getDouble("wall_detection", 0.1), 0.35)
-    private val noDetectionProceedDelaySec: Double = timeConfig.getDouble("no_detection_proceed", 8.0)
+    private val superTresholdSec: Double get() = timeConfig().getDouble("super", 0.1)
+    private val gadgetTresholdSec: Double get() = timeConfig().getDouble("gadget", 0.1)
+    private val hyperchargeTresholdSec: Double get() = timeConfig().getDouble("hypercharge", 0.1)
+    private val wallsTresholdSec: Double get() = maxOf(timeConfig().getDouble("wall_detection", 0.1), 0.35)
+    private val noDetectionProceedDelaySec: Double get() = timeConfig().getDouble("no_detection_proceed", 8.0)
 
-    private val gadgetPixelsMin: Long = botConfig.getDouble("gadget_pixels_minimum", 1300.0).toLong()
-    private val hyperchargePixelsMin: Long = botConfig.getDouble("hypercharge_pixels_minimum", 1800.0).toLong()
-    private val superPixelsMin: Long = botConfig.getDouble("super_pixels_minimum", 1800.0).toLong()
-    private val wallDetectionConfidence: Float = botConfig.getDouble("wall_detection_confidence", 0.5).toFloat()
-    private val entityDetectionConfidence: Float = botConfig.getDouble("entity_detection_confidence", 0.65).toFloat()
-    private val secondsToHoldAttackAfterReachingMax: Double = botConfig.getDouble("seconds_to_hold_attack_after_reaching_max", 1.5)
-    private val minimumMovementDelay: Double = botConfig.getDouble("minimum_movement_delay", 0.1)
+    private val gadgetPixelsMin: Long get() = botConfig().getDouble("gadget_pixels_minimum", 1300.0).toLong()
+    private val hyperchargePixelsMin: Long get() = botConfig().getDouble("hypercharge_pixels_minimum", 1800.0).toLong()
+    private val superPixelsMin: Long get() = botConfig().getDouble("super_pixels_minimum", 1800.0).toLong()
+    private val wallDetectionConfidence: Float get() = botConfig().getDouble("wall_detection_confidence", 0.5).toFloat()
+    private val entityDetectionConfidence: Float get() = botConfig().getDouble("entity_detection_confidence", 0.65).toFloat()
+    private val secondsToHoldAttackAfterReachingMax: Double get() = botConfig().getDouble("seconds_to_hold_attack_after_reaching_max", 1.5)
+    private val minimumMovementDelay: Double get() = botConfig().getDouble("minimum_movement_delay", 0.1)
 
     private val fixMovementKeys = FixMovementState(
-        delayToTrigger = botConfig.getDouble("unstuck_movement_delay", 2.4),
-        duration = botConfig.getDouble("unstuck_movement_hold_time", 1.4),
+        delayToTrigger = PylaConfig.load("cfg/bot_config.toml").getDouble("unstuck_movement_delay", 2.4),
+        duration = PylaConfig.load("cfg/bot_config.toml").getDouble("unstuck_movement_hold_time", 1.4),
     )
 
     private val brawlersInfo: Map<String, BrawlerInfo> = BrawlersInfo.load()
     private var brawlerRanges: Map<String, Triple<Int, Int, Int>>? = null
 
+    @Volatile var antiIdleEnabled: Boolean = false
     var currentBrawler: String? = null
     private var lastWallsData: List<FloatArray> = emptyList()
     private var lastBushesData: List<FloatArray> = emptyList()
@@ -548,7 +549,16 @@ class Play(
             persistentData = persistentData,
             secondsToHoldAttackAfterMax = secondsToHoldAttackAfterReachingMax,
         )
-        var move = playstyle.computeMovement(ctx) ?: return null
+        var move = playstyle.computeMovement(ctx)
+        if (move == null && antiIdleEnabled) {
+            move = PlaystyleCombat.safeRandom(ctx)
+        }
+        if (move == null) return null
+        if (antiIdleEnabled && kotlin.math.hypot(move.first, move.second) < 1.0) {
+            val r = PylaUtils.JOYSTICK_RADIUS.toDouble()
+            val dirs = listOf(0.0 to -r, r to 0.0, 0.0 to r, -r to 0.0)
+            move = dirs.random()
+        }
         move = clampMovement(move)
         val currentTime = nowSec()
         if (move != lastMovement) {

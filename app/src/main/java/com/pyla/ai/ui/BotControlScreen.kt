@@ -13,6 +13,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import kotlinx.coroutines.delay
@@ -119,6 +121,7 @@ fun BotControlScreen(
     requestAccessibility: () -> Unit,
     onMediaProjectionGranted: (resultCode: Int, data: Intent, width: Int, height: Int, queue: List<MutableMap<String, Any>>) -> Unit,
     onStop: () -> Unit,
+    onOpenSettings: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var accessibility by remember { mutableStateOf(accessibilityEnabled()) }
@@ -176,9 +179,16 @@ fun BotControlScreen(
                 contentDescription = null,
                 modifier = Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)),
             )
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text("PylaAndroid", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, color = PylaYellow)
                 Text("PylaAI Android Port", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = onOpenSettings) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "Settings",
+                    tint = PylaYellow,
+                )
             }
         }
 
@@ -236,6 +246,27 @@ fun BotControlScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                }
+            }
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            val antiIdle = remember { mutableStateOf(prefs.getBoolean("anti_idle", false)) }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Switch(
+                    checked = antiIdle.value,
+                    enabled = !running,
+                    onCheckedChange = {
+                        antiIdle.value = it
+                        prefs.edit().putBoolean("anti_idle", it).apply()
+                    },
+                    colors = SwitchDefaults.colors(checkedTrackColor = PylaPurple),
+                )
+                Column {
+                    Text("Anti-Idle", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Keeps the joystick moving at all times to prevent the bot from standing still",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
@@ -377,4 +408,4 @@ fun BotControlScreen(
     }
 }
 
-private const val GITHUB_URL = "https://github.com/hyrsource/PylaAndroid"
+private const val GITHUB_URL = "https://github.com/countryside99/PylaAndroid"

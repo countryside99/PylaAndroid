@@ -17,8 +17,8 @@ class StageManager(
 
     val trophyObserver = TrophyObserver()
 
-    private val playAgainOnWin: Boolean =
-        PylaConfig.load("cfg/bot_config.toml").getString("play_again_on_win", "no").toLowerCase() == "yes"
+    private val playAgainOnWin: Boolean get() =
+        PylaConfig.load("cfg/bot_config.toml").getString("play_again_on_win", "no").lowercase() == "yes"
 
     private var closePopupIcon: Mat? = null
     private var timeSinceLastStatChange: Double = System.currentTimeMillis() / 1000.0

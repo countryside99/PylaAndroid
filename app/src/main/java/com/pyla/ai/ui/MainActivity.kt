@@ -60,22 +60,28 @@ class MainActivity : ComponentActivity() {
                 Surface(modifier = Modifier.fillMaxSize()) {
 
                     var assetsReady by remember { mutableStateOf(PylaConfig.isReady()) }
+                    var showSettings by remember { mutableStateOf(false) }
                     LaunchedEffect(Unit) {
                         if (!assetsReady) {
                             withContext(Dispatchers.IO) { PylaConfig.init(applicationContext) }
                             assetsReady = true
                         }
                     }
-                    BotControlScreen(
-                        assetsReady = assetsReady,
-                        accessibilityEnabled = ::isAccessibilityEnabled,
-                        requestAccessibility = ::openAccessibilitySettings,
-                        onMediaProjectionGranted = { code, data, w, h, queue ->
-                            CaptureService.start(this, code, data, w, h)
-                            startEngine(w, h, queue)
-                        },
-                        onStop = ::stopBot,
-                    )
+                    if (showSettings) {
+                        SettingsScreen(onBack = { showSettings = false })
+                    } else {
+                        BotControlScreen(
+                            assetsReady = assetsReady,
+                            accessibilityEnabled = ::isAccessibilityEnabled,
+                            requestAccessibility = ::openAccessibilitySettings,
+                            onMediaProjectionGranted = { code, data, w, h, queue ->
+                                CaptureService.start(this, code, data, w, h)
+                                startEngine(w, h, queue)
+                            },
+                            onStop = ::stopBot,
+                            onOpenSettings = { showSettings = true },
+                        )
+                    }
                 }
             }
         }

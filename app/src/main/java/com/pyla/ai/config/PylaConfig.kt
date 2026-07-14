@@ -27,5 +27,7 @@ object PylaConfig {
         }
     }
 
+    fun invalidateAll() { cache.clear() }
+
     fun invalidate(relative: String) { cache.remove(relative) }
 }

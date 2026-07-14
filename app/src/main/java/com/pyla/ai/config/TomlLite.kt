@@ -3,7 +3,6 @@ package com.pyla.ai.config
 import java.io.File
 
 class TomlLite(private val root: Map<String, Any?>) {
-
     fun <T> get(path: String, default: T): T {
         val v = resolve(path) ?: return default
         @Suppress("UNCHECKED_CAST")

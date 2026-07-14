@@ -13,11 +13,11 @@ import java.util.concurrent.TimeUnit
 
 class LobbyAutomation(val windowController: WindowController) {
 
-    private val verboseDebug: Boolean =
+    private val verboseDebug: Boolean get() =
         PylaUtils.configBool(PylaConfig.load("cfg/debug_settings.toml").opt("verbose_debug"), false)
-    private val grayPixelsThreshold: Long =
+    private val grayPixelsThreshold: Long get() =
         PylaConfig.load("cfg/bot_config.toml").getDouble("idle_pixels_minimum", 500.0).toLong()
-    private val lobbyConfig = PylaConfig.load("cfg/lobby_config.toml")
+    private fun lobbyConfig() = PylaConfig.load("cfg/lobby_config.toml")
 
     private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
 
@@ -106,7 +106,7 @@ class LobbyAutomation(val windowController: WindowController) {
             windowController.click(label.first.toFloat(), label.second.toFloat())
         } else {
             Log.i(TAG, "Brawlers menu label not readable, falling back to configured coordinates")
-            val btn = lobbyConfig.getIntArray("lobby.brawler_btn")
+            val btn = lobbyConfig().getIntArray("lobby.brawler_btn")
             if (btn.size >= 2) windowController.click(btn[0] * hr, btn[1] * hr)
         }
     }
@@ -119,7 +119,7 @@ class LobbyAutomation(val windowController: WindowController) {
             windowController.click(label.first.toFloat(), label.second.toFloat())
         } else {
             Log.i(TAG, "Select button label not readable, falling back to configured coordinates")
-            val sel = lobbyConfig.getIntArray("lobby.select_btn")
+            val sel = lobbyConfig().getIntArray("lobby.select_btn")
             if (sel.size >= 2) windowController.click(sel[0] * hr, sel[1] * hr)
         }
     }

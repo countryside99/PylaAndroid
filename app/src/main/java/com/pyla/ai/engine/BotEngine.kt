@@ -77,10 +77,10 @@ class BotEngine(
     private var inCooldown = false
     private var cooldownStartMs = 0L
     private val cooldownDurationMs = 3 * 60 * 1000L
-    private var runForMinutes: Int = 0
     private var startTimeMs = 0L
 
-    private var gamePackage: String = GameLauncher.DEFAULT_PACKAGE
+    private val gamePackage: String get() = try { GameLauncher.gamePackage() } catch (_: Throwable) { GameLauncher.DEFAULT_PACKAGE }
+    private val runForMinutes: Int get() = try { PylaConfig.load("cfg/general_config.toml").getInt("run_for_minutes", 0) } catch (_: Throwable) { 0 }
     private var gameLostFocusSinceMs = 0L
     private var lastGameLaunchMs = 0L
     private var matchLoopMs = 0L
@@ -94,22 +94,10 @@ class BotEngine(
         BotStatus.inputConnected = com.pyla.ai.input.InputService.isConnected()
         BotStatus.queueSummary = queueData.joinToString(", ") { it["brawler"].toString() }
 
-        gamePackage = GameLauncher.gamePackage()
-        val autoOpen = try {
-            PylaConfig.load("cfg/general_config.toml").getBool("auto_open_brawl_stars", true)
-        } catch (t: Throwable) {
-            PylaLog.w(TAG, "config read failed (${t.message}), auto-opening anyway"); true
+        PylaLog.p(TAG, "Auto-opening Brawl Stars ($gamePackage)")
+        if (GameLauncher.launch(appContext, gamePackage)) {
+            lastGameLaunchMs = System.currentTimeMillis()
         }
-        if (autoOpen) {
-            PylaLog.p(TAG, "Auto-opening Brawl Stars ($gamePackage)")
-            if (GameLauncher.launch(appContext, gamePackage)) {
-                lastGameLaunchMs = System.currentTimeMillis()
-            }
-        }
-        runForMinutes = try {
-            PylaConfig.load("cfg/general_config.toml").getInt("run_for_minutes", 0)
-        } catch (t: Throwable) { 0 }
-
         loopThread = HandlerThread("pyla-bot-loop").apply { start() }
         Handler(loopThread.looper).post {
 
@@ -159,6 +147,8 @@ class BotEngine(
             closeTileDetectorModelPath = "models/closeTileDetector.onnx",
             playstyle = playstyle,
         )
+        play.antiIdleEnabled = prefs.getBoolean("anti_idle", false)
+        PylaLog.p(TAG, "Anti-Idle: ${if (play.antiIdleEnabled) "ON" else "off"}")
         stageManager = StageManager(
             queueData, lobbyAutomator, windowController,
             getState = { latestState },
