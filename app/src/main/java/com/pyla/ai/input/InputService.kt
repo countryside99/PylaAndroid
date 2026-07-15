@@ -14,20 +14,28 @@ class InputService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
 
-    private class Channel(val name: String) {
+    private class Channel(val name: String, val reapplyWhileHeld: Boolean = false) {
         var lastStroke: GestureDescription.StrokeDescription? = null
         var curX = 0f; var curY = 0f
         var downX = 0f; var downY = 0f
         var targetX = 0f; var targetY = 0f
         var wantDown = false
         var isDown = false
+        var jitter = 1f
+        // A StrokeDescription dispatched with willContinue=true is lifted by the OS unless it keeps
+        // getting continued. So while a channel is held down we must keep re-dispatching a
+        // continuation stroke every gesture, even when the target has not moved. This mirrors the
+        // PC version's re_apply_movement behaviour and is what keeps the joystick engaged so the
+        // character keeps moving without needing the old Anti-Idle hack.
         fun needsUpdate(): Boolean =
-            wantDown != isDown || (isDown && (targetX != curX || targetY != curY))
+            wantDown != isDown ||
+            (isDown && wantDown && reapplyWhileHeld) ||
+            (isDown && (targetX != curX || targetY != curY))
         fun reset() { lastStroke = null; isDown = false }
     }
 
-    private val joystickCh = Channel("joystick")
-    private val attackCh = Channel("attack")
+    private val joystickCh = Channel("joystick", reapplyWhileHeld = true)
+    private val attackCh = Channel("attack", reapplyWhileHeld = true)
     private class Pending(val x1: Float, val y1: Float, val x2: Float, val y2: Float, val durationMs: Long)
     private val strokeQueue = ArrayDeque<Pending>()
     private var gestureInFlight = false
@@ -222,7 +230,7 @@ if (!accepted) {
         val prev = ch.lastStroke
         return when {
             ch.wantDown && !ch.isDown -> {
-                val path = Path().apply { moveTo(sx(ch.downX), sy(ch.downY)); lineTo(sx(ch.targetX), sy(ch.targetY)) }
+                val path = heldPath(ch.downX, ch.downY, ch.targetX, ch.targetY, ch)
                 val s = GestureDescription.StrokeDescription(path, 0L, MOVE_DURATION_MS, true)
                 ch.isDown = true; ch.curX = ch.targetX; ch.curY = ch.targetY; ch.lastStroke = s
                 s
@@ -234,7 +242,7 @@ if (!accepted) {
                 s
             }
             ch.isDown && prev != null -> {
-                val path = Path().apply { moveTo(sx(ch.curX), sy(ch.curY)); lineTo(sx(ch.targetX), sy(ch.targetY)) }
+                val path = heldPath(ch.curX, ch.curY, ch.targetX, ch.targetY, ch)
                 val s = prev.continueStroke(path, 0L, MOVE_DURATION_MS, true)
                 ch.curX = ch.targetX; ch.curY = ch.targetY; ch.lastStroke = s
                 s
@@ -243,9 +251,43 @@ if (!accepted) {
         }
     }
 
+    /**
+     * Builds a held-gesture path in screen coordinates that is guaranteed to be non-degenerate.
+     *
+     * A continued stroke whose path has zero length is interpreted by many devices as a tap
+     * (finger down + up), which lifts the joystick and re-presses it every cycle -> "clicky",
+     * stop-and-go movement.
+     *
+     * When the target hasn't moved (a steady direction being held) we keep the pointer alive with a
+     * tiny nudge applied *radially* - i.e. along the line from the joystick centre to the target.
+     * That changes only the deflection magnitude by an imperceptible amount and never the
+     * direction, so the character keeps gliding in a straight line instead of wiggling. This mirrors
+     * the PC version's continuous touch_move on a permanently-held pointer.
+     */
+    private fun heldPath(fromX: Float, fromY: Float, toX: Float, toY: Float, ch: Channel): Path {
+        val fxs = sx(fromX); val fys = sy(fromY)
+        var exs = sx(toX); var eys = sy(toY)
+        if (kotlin.math.abs(exs - fxs) < 0.75f && kotlin.math.abs(eys - fys) < 0.75f) {
+            val cxs = sx(ch.downX); val cys = sy(ch.downY)
+            var rx = exs - cxs; var ry = eys - cys
+            val mag = kotlin.math.hypot(rx, ry)
+            if (mag < 0.5f) { rx = 1f; ry = 0f } else { rx /= mag; ry /= mag }
+            ch.jitter = -ch.jitter
+            exs += rx * NUDGE_PX * ch.jitter
+            eys += ry * NUDGE_PX * ch.jitter
+        }
+        return Path().apply { moveTo(fxs, fys); lineTo(exs, eys) }
+    }
+
     companion object {
         private const val TAG = "PylaInput"
-        private const val MOVE_DURATION_MS = 40L
+        // Duration of each held movement segment. The willContinue pointer stays pressed across
+        // segments, so a slightly longer segment means fewer dispatch handoffs and smoother motion
+        // while remaining far more responsive than the bot's own decision loop.
+        private const val MOVE_DURATION_MS = 80L
+        // Sub-pixel radial nudge (screen px) that keeps a steadily-held joystick pointer alive
+        // without lifting it and without altering the movement direction.
+        private const val NUDGE_PX = 2f
         private const val RELEASE_DURATION_MS = 16L
         private const val MAX_STROKES_PER_GESTURE = 8
         private const val MAX_QUEUED_STROKES = 16

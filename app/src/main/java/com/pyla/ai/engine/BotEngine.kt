@@ -6,6 +6,7 @@ import android.os.HandlerThread
 import android.util.Log
 import com.pyla.ai.capture.CaptureService
 import com.pyla.ai.config.PylaConfig
+import com.pyla.ai.pyla.PlaystyleRegistry
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -132,23 +133,36 @@ class BotEngine(
         lobbyAutomator = LobbyAutomation(windowController)
 
         val prefs = appContext.getSharedPreferences("pyla", Context.MODE_PRIVATE)
-        val playstyle = Playstyles.byId(prefs.getString("playstyle", null))
-        PylaLog.p(TAG, "Selected playstyle: ${playstyle.displayName} (gamemodes=${playstyle.gamemodes})")
+        val selectedPlaystyle = prefs.getString("playstyle", PlaystyleRegistry.DEFAULT_PLAYSTYLE)
+            ?: PlaystyleRegistry.DEFAULT_PLAYSTYLE
+        var pylaScript = PlaystyleRegistry.load(selectedPlaystyle)
+        if (pylaScript == null && selectedPlaystyle != PlaystyleRegistry.DEFAULT_PLAYSTYLE) {
+            PylaLog.w(TAG, "Playstyle '$selectedPlaystyle' failed to load, falling back to default")
+            pylaScript = PlaystyleRegistry.load(PlaystyleRegistry.DEFAULT_PLAYSTYLE)
+        }
+        if (pylaScript == null) {
+            pylaScript = PlaystyleRegistry.listMeta().firstOrNull()?.let { PlaystyleRegistry.load(it.filename) }
+        }
+        if (pylaScript == null) {
+            BotStatus.error("No playstyle (.pyla) could be loaded")
+            PylaLog.e(TAG, "No .pyla playstyle available; aborting start")
+            stop()
+            return
+        }
+        PylaLog.p(TAG, "Selected playstyle: ${pylaScript.meta.displayName} (gamemodes=${pylaScript.meta.gamemodes})")
 
         val playstyleInfo = HashMap<String, Any>()
-        playstyleInfo["name"] = "${playstyle.displayName} (Android)"
-        playstyleInfo["gamemodes"] = playstyle.gamemodes
-        playstyleInfo["brawlers"] = listOf("all")
+        playstyleInfo["name"] = "${pylaScript.meta.displayName} (Android)"
+        playstyleInfo["gamemodes"] = pylaScript.meta.gamemodes
+        playstyleInfo["brawlers"] = pylaScript.meta.brawlers.ifEmpty { listOf("all") }
 
         play = Play(
             windowController,
             mainInfoModelPath = "models/mainInGameModel.onnx",
             tileDetectorModelPath = "models/tileDetector.onnx",
             closeTileDetectorModelPath = "models/closeTileDetector.onnx",
-            playstyle = playstyle,
+            pylaScript = pylaScript,
         )
-        play.antiIdleEnabled = prefs.getBoolean("anti_idle", false)
-        PylaLog.p(TAG, "Anti-Idle: ${if (play.antiIdleEnabled) "ON" else "off"}")
         stageManager = StageManager(
             queueData, lobbyAutomator, windowController,
             getState = { latestState },

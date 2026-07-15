@@ -10,7 +10,7 @@ object AssetBundler {
     private const val TAG = "PylaAssets"
     private const val PARENT = "pyla"
     private const val VERSION_FILE = "pyla_assets_version.txt"
-    private const val ASSETS_VERSION = 7
+    private const val ASSETS_VERSION = 8
     val version: Int get() = ASSETS_VERSION
 
     fun ensureExtracted(context: Context): File {

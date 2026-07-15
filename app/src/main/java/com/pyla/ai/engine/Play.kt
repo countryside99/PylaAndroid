@@ -3,6 +3,15 @@ package com.pyla.ai.engine
 import android.util.Log
 import com.pyla.ai.config.PylaConfig
 import com.pyla.ai.config.TomlLite
+import com.pyla.ai.pyla.NativeFn
+import com.pyla.ai.pyla.Py
+import com.pyla.ai.pyla.PyDict
+import com.pyla.ai.pyla.PyList
+import com.pyla.ai.pyla.PyNone
+import com.pyla.ai.pyla.PyTuple
+import com.pyla.ai.pyla.PylaScript
+import org.json.JSONArray
+import org.json.JSONObject
 import org.opencv.core.Mat
 import org.opencv.core.Point
 import org.opencv.core.Rect
@@ -21,7 +30,7 @@ class Play(
     mainInfoModelPath: String,
     tileDetectorModelPath: String,
     closeTileDetectorModelPath: String,
-    var playstyle: Playstyle = Playstyles.default,
+    var pylaScript: PylaScript? = null,
 ) {
     companion object { private const val TAG = "PylaPlay" }
 
@@ -72,7 +81,15 @@ class Play(
     private val brawlersInfo: Map<String, BrawlerInfo> = BrawlersInfo.load()
     private var brawlerRanges: Map<String, Triple<Int, Int, Int>>? = null
 
-    @Volatile var antiIdleEnabled: Boolean = false
+    // Python-visible dict of brawler info, built once from the raw JSON.
+    private var brawlersInfoPyCache: PyDict? = null
+
+    // Persistent dict shared across frames, matching the PC persistent_data behaviour.
+    private val persistentDataPy: PyDict = PyDict(LinkedHashMap<Any, Any>().apply {
+        put("time_since_holding_attack", PyNone)
+        put("last_gadget_use", 0.0)
+    })
+
     var currentBrawler: String? = null
     private var lastWallsData: List<FloatArray> = emptyList()
     private var lastBushesData: List<FloatArray> = emptyList()
@@ -94,7 +111,6 @@ class Play(
     private var lastMovementChangeTime: Double = nowSec()
 
     private var frame: Mat? = null
-    private var persistentData = PersistentData()
 
     private fun nowSec() = System.currentTimeMillis() / 1000.0
 
@@ -355,28 +371,8 @@ class Play(
         return tx.toDouble() to ty.toDouble()
     }
 
-    private fun boostToMinimumMagnitude(m: Pair<Double, Double>): Pair<Double, Double> {
-        val mag = hypot(m.first, m.second)
-        val minMag = PylaUtils.JOYSTICK_RADIUS * windowController.scaleFactor
-        if (minMag <= 0.0) return m
-        if (mag >= minMag) return m
-        if (mag < 0.0001) {
-            val r = PylaUtils.JOYSTICK_RADIUS.toDouble() * windowController.scaleFactor
-            val dirs = listOf(0.0 to -r, r to 0.0, 0.0 to r, -r to 0.0)
-            return dirs.random()
-        }
-        val scale = minMag / mag
-        return (m.first * scale) to (m.second * scale)
-    }
-
     fun doMovement(movement: Pair<Double, Double>?) {
         if (movement == null) {
-            if (antiIdleEnabled) {
-                val r = PylaUtils.JOYSTICK_RADIUS.toDouble() * windowController.scaleFactor
-                val dirs = listOf(0.0 to -r, r to 0.0, 0.0 to r, -r to 0.0)
-                windowController.move(dirs.random().first.toFloat(), dirs.random().second.toFloat())
-                return
-            }
             windowController.releaseMovement()
             return
         }
@@ -514,13 +510,7 @@ class Play(
 
         if (!hasPlayer || state != "match") {
             if (currentTime - timeSincePlayerLastFound > 1.0) {
-                if (antiIdleEnabled && state == "match") {
-                    val r = PylaUtils.JOYSTICK_RADIUS.toDouble()
-                    val dirs = listOf(0.0 to -r, r to 0.0, 0.0 to r, -r to 0.0)
-                    doMovement(clampMovement(dirs.random()))
-                } else {
-                    windowController.releaseMovement()
-                }
+                windowController.releaseMovement()
             }
             if (currentTime - timeSinceLastProceeding > noDetectionProceedDelaySec) {
                 val currentState = StateFinder.getState(frame)
@@ -552,62 +542,236 @@ class Play(
         }
 
         currentBrawler = brawler
-        val movement = runPlaystyle(brawler, data)
+        val movement = computeScriptMovement(brawler, data)
         doMovement(movement)
     }
 
-    private fun runPlaystyle(brawler: String, data: Map<String, MutableList<FloatArray>>): Pair<Double, Double>? {
+    private fun computeScriptMovement(brawler: String, data: Map<String, MutableList<FloatArray>>): Pair<Double, Double>? {
+        val script = pylaScript ?: return null
         val playerBox = data["player"]?.firstOrNull() ?: return null
-        val enemyData = data["enemy"] ?: emptyList()
-        val teammateData = data["teammate"] ?: emptyList()
-        val walls = data["wall"] ?: emptyList()
-        val bushes = data["bush"] ?: emptyList()
+        val context = buildContext(brawler, playerBox, data)
 
-        val ctx = PlayContext(
-            playerData = playerBox,
-            enemyData = enemyData,
-            teammateData = teammateData,
-            brawler = brawler,
-            walls = walls,
-            bushes = bushes,
-            play = this,
-            brawlersInfo = brawlersInfo,
-            isSuperReady = isSuperReady,
-            isGadgetReady = isGadgetReady,
-            isHyperchargeReady = isHyperchargeReady,
-            persistentData = persistentData,
-            secondsToHoldAttackAfterMax = secondsToHoldAttackAfterReachingMax,
-        )
-        var move = playstyle.computeMovement(ctx)
-        if (move == null && antiIdleEnabled) {
-            move = PlaystyleCombat.safeRandom(ctx)
-        }
-        if (move == null) return null
-        if (antiIdleEnabled && kotlin.math.hypot(move.first, move.second) < 1.0) {
-            val r = PylaUtils.JOYSTICK_RADIUS.toDouble()
-            val dirs = listOf(0.0 to -r, r to 0.0, 0.0 to r, -r to 0.0)
-            move = dirs.random()
+        val raw = script.run(context)
+        var move = pyToPair(raw)
+        if (move == null) {
+            lastMovement = ""
+            return null
         }
         move = clampMovement(move)
-        move = boostToMinimumMagnitude(move)
         val currentTime = nowSec()
-        if (move != lastMovement) {
+        if (!movementEquals(move, lastMovement)) {
             if (currentTime - lastMovementChangeTime >= minimumMovementDelay) {
                 lastMovement = move
                 lastMovementChangeTime = currentTime
             } else {
-                move = (lastMovement as? Pair<Double, Double>) ?: move
+                val prev = lastMovement
+                if (prev is Pair<*, *>) {
+                    @Suppress("UNCHECKED_CAST")
+                    move = prev as Pair<Double, Double>
+                } else {
+                    return null
+                }
             }
         } else {
             lastMovementChangeTime = currentTime
         }
         return unstuckMovementIfNeeded(move, currentTime)
     }
-}
 
-class PersistentData {
-    @Volatile var timeSinceHoldingAttack: Double? = null
-    @Volatile var lastGadgetUse: Double = 0.0
+    private fun movementEquals(a: Pair<Double, Double>, b: Any?): Boolean {
+        if (b !is Pair<*, *>) return false
+        return a.first == b.first && a.second == b.second
+    }
+
+    // ---------- .pyla context bridge ----------
+
+    private fun brawlersInfoPy(): PyDict {
+        brawlersInfoPyCache?.let { return it }
+        val outer = LinkedHashMap<Any, Any>()
+        try {
+            val file = PylaConfig.resolve("cfg/brawlers_info.json")
+            if (file.exists()) {
+                val root = JSONObject(file.readText())
+                for (key in root.keys()) {
+                    outer[key] = jsonToPy(root.get(key))
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "brawlers_info parse: ${t.message}")
+        }
+        val d = PyDict(outer)
+        brawlersInfoPyCache = d
+        return d
+    }
+
+    private fun jsonToPy(v: Any?): Any = when (v) {
+        null, JSONObject.NULL -> PyNone
+        is JSONObject -> {
+            val m = LinkedHashMap<Any, Any>()
+            for (k in v.keys()) m[k] = jsonToPy(v.get(k))
+            PyDict(m)
+        }
+        is JSONArray -> {
+            val l = ArrayList<Any>()
+            for (i in 0 until v.length()) l.add(jsonToPy(v.get(i)))
+            PyList(l)
+        }
+        is Boolean -> v
+        is Int -> v.toLong()
+        is Long -> v
+        is Double -> v
+        is Float -> v.toDouble()
+        is String -> v
+        is Number -> v.toDouble()
+        else -> v.toString()
+    }
+
+    private fun boxToPy(box: FloatArray): PyList =
+        PyList(box.map { it.toDouble() as Any }.toMutableList())
+
+    private fun boxesToPy(boxes: List<FloatArray>): PyList =
+        PyList(boxes.map { boxToPy(it) as Any }.toMutableList())
+
+    private fun pyToBox(v: Any?): FloatArray {
+        val items = when (v) {
+            is PyList -> v.items
+            is PyTuple -> v.items
+            else -> return FloatArray(0)
+        }
+        return FloatArray(items.size) { Py.toDouble(items[it]).toFloat() }
+    }
+
+    private fun pyToBoxes(v: Any?): List<FloatArray> {
+        val items = when (v) {
+            is PyList -> v.items
+            is PyTuple -> v.items
+            else -> return emptyList()
+        }
+        return items.map { pyToBox(it) }
+    }
+
+    private fun pairToPy(p: Pair<Double, Double>): PyTuple = PyTuple(listOf(p.first, p.second))
+
+    private fun pyToPair(v: Any?): Pair<Double, Double>? {
+        val items = when (v) {
+            is PyTuple -> v.items
+            is PyList -> v.items
+            else -> return null
+        }
+        if (items.size != 2) return null
+        val x = items[0]; val y = items[1]
+        if (!Py.isNumber(x) || !Py.isNumber(y)) return null
+        return Py.toDouble(x) to Py.toDouble(y)
+    }
+
+    private fun buildContext(brawler: String, playerBox: FloatArray, data: Map<String, MutableList<FloatArray>>): Map<String, Any> {
+        val ctx = HashMap<String, Any>()
+
+        ctx["player_data"] = boxToPy(playerBox)
+        ctx["enemy_data"] = boxesToPy(data["enemy"] ?: emptyList())
+        ctx["teammate_data"] = boxesToPy(data["teammate"] ?: emptyList())
+        ctx["walls"] = boxesToPy(data["wall"] ?: emptyList())
+        ctx["bushes"] = boxesToPy(data["bush"] ?: emptyList())
+        ctx["brawler"] = brawler
+        ctx["current_brawler"] = currentBrawler ?: PyNone
+        ctx["brawlers_info"] = brawlersInfoPy()
+        ctx["is_gadget_ready"] = isGadgetReady
+        ctx["is_hypercharge_ready"] = isHyperchargeReady
+        ctx["is_super_ready"] = isSuperReady
+        ctx["TILE_SIZE"] = tileSizePx
+        ctx["JOYSTICK_RADIUS"] = PylaUtils.JOYSTICK_RADIUS.toLong()
+        ctx["width"] = 1920L
+        ctx["height"] = 1080L
+        ctx["debug"] = verboseDebug
+        ctx["seconds_to_hold_attack_after_reaching_max"] = secondsToHoldAttackAfterReachingMax
+        ctx["persistent_data"] = persistentDataPy
+        ctx["last_movement"] = lastMovement?.let { if (it is Pair<*, *>) pyToPair(pairAsPy(it)) ?: PyNone else PyNone } ?: PyNone
+        ctx["last_movement_change_time"] = lastMovementChangeTime
+
+        ctx["get_entity_pos"] = NativeFn("get_entity_pos") { a, _ -> pairToPy(getEntityPos(pyToBox(a[0]))) }
+        ctx["get_distance"] = NativeFn("get_distance") { a, _ ->
+            getDistance(pyToPair(a[0]) ?: (0.0 to 0.0), pyToPair(a[1]) ?: (0.0 to 0.0))
+        }
+        ctx["get_actual_player_box"] = NativeFn("get_actual_player_box") { a, _ ->
+            getActualPlayerBox(pyToBox(a[0]))?.let { boxToPy(it) } ?: PyNone
+        }
+        ctx["get_brawler_range"] = NativeFn("get_brawler_range") { a, _ ->
+            val (s, at, su) = getBrawlerRange(a[0] as? String ?: brawler)
+            PyList(mutableListOf(s.toLong(), at.toLong(), su.toLong()))
+        }
+        ctx["is_there_enemy"] = NativeFn("is_there_enemy") { a, _ ->
+            val v = a.getOrNull(0)
+            when (v) { is PyList -> v.items.isNotEmpty(); is PyTuple -> v.items.isNotEmpty(); else -> false }
+        }
+        ctx["attack"] = NativeFn("attack") { a, kw ->
+            val tu = boolArg(kw["touch_up"] ?: a.getOrNull(0), true)
+            val td = boolArg(kw["touch_down"] ?: a.getOrNull(1), true)
+            attack(tu, td); PyNone
+        }
+        ctx["use_hypercharge"] = NativeFn("use_hypercharge") { _, _ -> useHypercharge(); PyNone }
+        ctx["use_super"] = NativeFn("use_super") { _, _ -> useSuper(); PyNone }
+        ctx["use_gadget"] = NativeFn("use_gadget") { _, _ -> useGadget(); PyNone }
+        ctx["get_random_movement"] = NativeFn("get_random_movement") { _, _ ->
+            PyTuple(listOf(Random.nextInt(-75, 76).toLong(), Random.nextInt(-75, 76).toLong()))
+        }
+        ctx["must_brawler_hold_attack"] = NativeFn("must_brawler_hold_attack") { a, _ ->
+            mustHoldAttack(a.getOrNull(0) as? String ?: brawler)
+        }
+        ctx["find_closest_enemy"] = NativeFn("find_closest_enemy") { a, _ ->
+            val enemies = pyToBoxes(a.getOrNull(0))
+            val pc = pyToPair(a.getOrNull(1)) ?: (0.0 to 0.0)
+            val walls = pyToBoxes(a.getOrNull(2))
+            val skill = a.getOrNull(3) as? String ?: "attack"
+            val (coords, dist) = findClosestEnemy(enemies, pc, walls, skill)
+            PyTuple(listOf(coords?.let { pairToPy(it) } ?: PyNone, dist ?: PyNone))
+        }
+        ctx["find_closest_teammate"] = NativeFn("find_closest_teammate") { a, _ ->
+            val teammates = pyToBoxes(a.getOrNull(0))
+            val pc = pyToPair(a.getOrNull(1)) ?: (0.0 to 0.0)
+            val (coords, dist) = findClosestTeammate(teammates, pc)
+            PyTuple(listOf(coords?.let { pairToPy(it) } ?: PyNone, dist ?: PyNone))
+        }
+        ctx["is_there_poison_gas"] = NativeFn("is_there_poison_gas") { a, kw ->
+            val box = pyToBox(a.getOrNull(0))
+            val threshold = (kw["threshold"] ?: a.getOrNull(1))?.let { Py.toLong(it).toInt() } ?: 7000
+            val area = (kw["area_from_player_checked"] ?: a.getOrNull(2))?.let { Py.toDouble(it) } ?: 1.5
+            val gas = isTherePoisonGas(box, threshold, area)
+            val m = LinkedHashMap<Any, Any>()
+            m["up"] = (gas["up"] ?: 0).toLong()
+            m["down"] = (gas["down"] ?: 0).toLong()
+            m["left"] = (gas["left"] ?: 0).toLong()
+            m["right"] = (gas["right"] ?: 0).toLong()
+            PyDict(m)
+        }
+        ctx["is_path_blocked"] = NativeFn("is_path_blocked") { a, _ ->
+            val box = pyToBox(a.getOrNull(0))
+            val move = pyToPair(a.getOrNull(1))
+            val walls = pyToBoxes(a.getOrNull(2))
+            isPathBlocked(box, move, walls)
+        }
+        ctx["is_enemy_hittable"] = NativeFn("is_enemy_hittable") { a, _ ->
+            val pp = pyToPair(a.getOrNull(0)) ?: (0.0 to 0.0)
+            val ep = pyToPair(a.getOrNull(1)) ?: (0.0 to 0.0)
+            val walls = pyToBoxes(a.getOrNull(2))
+            val skill = a.getOrNull(3) as? String ?: "attack"
+            isEnemyHittable(pp, ep, walls, skill)
+        }
+        ctx["rotate_movement"] = NativeFn("rotate_movement") { a, _ ->
+            val m = pyToPair(a.getOrNull(0)) ?: (0.0 to 0.0)
+            pairToPy(rotateMovement(m, Py.toDouble(a[1])))
+        }
+
+        return ctx
+    }
+
+    private fun pairAsPy(p: Pair<*, *>): PyTuple =
+        PyTuple(listOf((p.first as Number).toDouble(), (p.second as Number).toDouble()))
+
+    private fun boolArg(v: Any?, default: Boolean): Boolean = when (v) {
+        null -> default
+        is Boolean -> v
+        else -> Py.truthy(v)
+    }
 }
 
 class FixMovementState(

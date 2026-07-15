@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -31,8 +33,8 @@ import androidx.compose.ui.unit.dp
 import com.pyla.ai.R
 import com.pyla.ai.engine.BotEngine
 import com.pyla.ai.engine.BotStatus
-import com.pyla.ai.engine.Playstyles
 import com.pyla.ai.input.InputService
+import com.pyla.ai.pyla.PlaystyleRegistry
 
 private val PylaYellow = Color(0xFFFFC400)
 private val PylaGreen = Color(0xFF4CD964)
@@ -128,7 +130,34 @@ fun BotControlScreen(
     var running by remember { mutableStateOf(BotStatus.engineRunning) }
 
     val prefs = remember { context.getSharedPreferences("pyla", Context.MODE_PRIVATE) }
-    var playstyleId by remember { mutableStateOf(prefs.getString("playstyle", Playstyles.default.id) ?: Playstyles.default.id) }
+    var selectedPlaystyle by remember {
+        mutableStateOf(prefs.getString("playstyle", PlaystyleRegistry.DEFAULT_PLAYSTYLE) ?: PlaystyleRegistry.DEFAULT_PLAYSTYLE)
+    }
+    var playstyleRefresh by remember { mutableStateOf(0) }
+    val playstyles = remember(assetsReady, playstyleRefresh) {
+        if (assetsReady) PlaystyleRegistry.listMeta() else emptyList()
+    }
+    val bundledPlaystyleNames = remember(assetsReady) {
+        if (assetsReady) PlaystyleRegistry.bundledNames(context) else emptySet()
+    }
+    val importPlaystyleLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val content = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                val name = queryDisplayName(context, uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "custom.pyla"
+                if (content != null) {
+                    val stored = PlaystyleRegistry.importContent(name, content)
+                    if (stored != null) {
+                        selectedPlaystyle = stored
+                        prefs.edit().putString("playstyle", stored).apply()
+                        playstyleRefresh++
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
 
     val queue = remember { mutableStateListOf<QueueEntryUi>() }
     var queueLoaded by remember { mutableStateOf(false) }
@@ -227,48 +256,61 @@ fun BotControlScreen(
         }
 
         SectionCard("Playstyle", PylaPurple) {
-            Playstyles.all.forEach { style ->
+            if (playstyles.isEmpty()) {
+                Text(
+                    if (assetsReady) "No .pyla playstyles found. Import one below."
+                    else "Loading playstyles…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            playstyles.forEach { style ->
+                val selected = selectedPlaystyle == style.filename
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     RadioButton(
-                        selected = playstyleId == style.id,
+                        selected = selected,
                         enabled = !running,
                         onClick = {
-                            playstyleId = style.id
-                            prefs.edit().putString("playstyle", style.id).apply()
+                            selectedPlaystyle = style.filename
+                            prefs.edit().putString("playstyle", style.filename).apply()
                         },
                         colors = RadioButtonDefaults.colors(selectedColor = PylaPurple),
                     )
-                    Column {
-                        Text(style.displayName, fontWeight = if (playstyleId == style.id) FontWeight.Bold else FontWeight.Normal)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(style.displayName, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
                         Text(
-                            "modes: ${style.gamemodes.joinToString(", ")}",
+                            "modes: ${style.gamemodes.joinToString(", ")}" +
+                                if (style.author.isNotBlank()) "  ·  by ${style.author}" else "",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    if (!running && style.filename !in bundledPlaystyleNames) {
+                        TextButton(
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            onClick = {
+                                PlaystyleRegistry.delete(style.filename)
+                                if (selectedPlaystyle == style.filename) {
+                                    selectedPlaystyle = PlaystyleRegistry.DEFAULT_PLAYSTYLE
+                                    prefs.edit().putString("playstyle", selectedPlaystyle).apply()
+                                }
+                                playstyleRefresh++
+                            },
+                        ) { Text("Delete", style = MaterialTheme.typography.labelSmall, color = PylaRed) }
+                    }
                 }
             }
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-            val antiIdle = remember { mutableStateOf(prefs.getBoolean("anti_idle", false)) }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Switch(
-                    checked = antiIdle.value,
-                    enabled = !running,
-                    onCheckedChange = {
-                        antiIdle.value = it
-                        prefs.edit().putBoolean("anti_idle", it).apply()
-                    },
-                    colors = SwitchDefaults.colors(checkedTrackColor = PylaPurple),
-                )
-                Column {
-                    Text("Anti-Idle", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                    Text(
-                        "Keeps the joystick moving at all times to prevent the bot from standing still",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+            OutlinedButton(
+                enabled = assetsReady && !running,
+                onClick = { importPlaystyleLauncher.launch(arrayOf("*/*")) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Import custom .pyla") }
+            Text(
+                "Import a .pyla playstyle from the original PylaAI to control how the bot plays.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         SectionCard("Brawler queue", PylaYellow) {
@@ -409,3 +451,14 @@ fun BotControlScreen(
 }
 
 private const val GITHUB_URL = "https://github.com/countryside99/PylaAndroid"
+
+private fun queryDisplayName(context: Context, uri: Uri): String? {
+    return try {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (idx >= 0 && cursor.moveToFirst()) cursor.getString(idx) else null
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
