@@ -1,0 +1,102 @@
+{"name": "Default - RIGHT", "description": "Default logic, when target is RIGHT", "brawlers": ["all"], "gamemodes": ["3v3", "5v5"], "author": "Official", "date": "2026-04-23"}
+def no_enemy_movement(player_data, walls):
+    preferred_movement = (JOYSTICK_RADIUS, 0)
+
+    if not is_path_blocked(player_data, preferred_movement, walls):
+        return preferred_movement
+    else:
+        # Try alternative movements
+        alternative_moves = [(0, -JOYSTICK_RADIUS), (-JOYSTICK_RADIUS, 0), (0, JOYSTICK_RADIUS), (JOYSTICK_RADIUS, 0)]
+        alternative_moves.remove(preferred_movement)
+        random.shuffle(alternative_moves)
+        for move in alternative_moves:
+            if not is_path_blocked(player_data, move, walls):
+                return move
+        return preferred_movement
+
+brawler_info = brawlers_info.get(brawler)
+if not brawler_info:
+    raise ValueError(f"Brawler '{brawler}' not found in brawlers info.")
+must_brawler_hold_attack = must_brawler_hold_attack(brawler, brawlers_info)
+# if a brawler has been holding an attack for its max duration + the bot setting, then we release
+if must_brawler_hold_attack and persistent_data["time_since_holding_attack"] is not None and time.time() - persistent_data["time_since_holding_attack"] >= brawler_info['hold_attack'] + seconds_to_hold_attack_after_reaching_max:
+    attack(touch_up=True, touch_down=False)
+    persistent_data["time_since_holding_attack"] = None
+
+safe_range, attack_range, super_range = get_brawler_range(brawler)
+player_pos = get_entity_pos(player_data)
+if debug: print("found player pos:", player_pos)
+if not is_there_enemy(enemy_data):
+    movement = no_enemy_movement(player_data, walls)
+else:
+    enemy_coords, enemy_distance = find_closest_enemy(enemy_data, player_pos, walls, "attack")
+    if enemy_coords is None:
+        movement = no_enemy_movement(player_data, walls)
+    else:
+        if debug: print("found enemy pos:", enemy_coords)
+        direction_x = enemy_coords[0] - player_pos[0]
+        direction_y = enemy_coords[1] - player_pos[1]
+
+        # Determine initial movement direction
+        if enemy_distance > safe_range:  # Move towards the enemy
+            move_horizontal = (direction_x, 0)
+            move_vertical = (0, direction_y)
+            move_diagonal = (direction_x, direction_y)
+        else:  # Move away from the enemy
+            move_horizontal = (-direction_x, 0)
+            move_vertical = (0, -direction_y)
+            move_diagonal = (-direction_x, -direction_y)
+
+        movement_options = [move_diagonal, move_horizontal, move_vertical]
+
+        # Check for walls and adjust movement
+        for move in movement_options:
+            if not is_path_blocked(player_data, move, walls):
+                movement = move
+                break
+        else:
+            # If all preferred directions are blocked, try other directions
+            alternative_moves = [(0, -JOYSTICK_RADIUS), (-JOYSTICK_RADIUS, 0), (0, JOYSTICK_RADIUS), (JOYSTICK_RADIUS, 0)]
+            random.shuffle(alternative_moves)
+            for move in alternative_moves:
+                if not is_path_blocked(player_data, move, walls):
+                    movement = move
+                    break
+            else:
+                # if no movement is available, we still try to go in the best direction
+                # because it's better than doing nothing
+                movement = move_diagonal
+
+
+
+        if is_super_ready and persistent_data["time_since_holding_attack"] is None:
+            super_type = brawler_info['super_type']
+            enemy_hittable = is_enemy_hittable(player_pos, enemy_coords, walls, "super")
+
+            if (enemy_hittable and
+                    (enemy_distance <= super_range
+                     or super_type in ["spawnable", "other"]
+                     or (brawler in ["stu", "surge"] and super_type == "charge" and enemy_distance <= super_range + attack_range)
+                    )):
+                if is_hypercharge_ready:
+                    use_hypercharge()
+
+                use_super()
+
+
+        # Attack if enemy is within attack range and hittable
+        if enemy_distance <= attack_range:
+            enemy_hittable = is_enemy_hittable(player_pos, enemy_coords, walls, "attack")
+            if enemy_hittable:
+                if is_gadget_ready and persistent_data["time_since_holding_attack"] is None:
+                    use_gadget()
+
+                if not must_brawler_hold_attack:
+                    attack()
+                else:
+                    if persistent_data["time_since_holding_attack"] is None:
+                        persistent_data["time_since_holding_attack"] = time.time()
+                        attack(touch_up=False, touch_down=True)
+                    elif time.time() - persistent_data["time_since_holding_attack"] >= brawlers_info[brawler]['hold_attack']:
+                        attack(touch_up=True, touch_down=False)
+                        persistent_data["time_since_holding_attack"] = None
