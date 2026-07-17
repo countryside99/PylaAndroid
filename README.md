@@ -1,3 +1,6 @@
+# ⚠️⚠️ Note of discontinuation ⚠️⚠️
+Please note that this project has been officially discontinued and will no longer receive updates in the foreseeable future.
+Instead of using this outdated version, try out **https://github.com/4D1-TooFarGone/Pyla-Ports/tree/android**.
 # PylaAndroid
 PylaAndroid is a simple and easy to use without root or ADB needed PylaAI port on-device.
 # Information
