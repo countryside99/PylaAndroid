@@ -1,19 +1,19 @@
 package com.pyla.ai.engine
 
-import android.util.Log
+import android.os.SystemClock
 import com.pyla.ai.capture.CaptureService
 import com.pyla.ai.capture.InputCoordinates
 import com.pyla.ai.input.InputService
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 
-class FrameSnapshot(val width: Int, val height: Int, val argb: IntArray) {
-    fun ageMs(): Long {
-        if (createdAtNs == 0L) return 0
-        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - createdAtNs)
-    }
-    @Volatile var createdAtNs: Long = 0L
+class FrameSnapshot(
+    val width: Int,
+    val height: Int,
+    val argb: IntArray,
+    val capturedAtMs: Long,
+) {
+    fun ageMs(): Long =
+        if (capturedAtMs <= 0L) Long.MAX_VALUE
+        else (SystemClock.elapsedRealtime() - capturedAtMs).coerceAtLeast(0L)
 }
 
 class WindowController(
@@ -34,13 +34,24 @@ class WindowController(
     val scaleFactor: Float get() = minOf(widthRatio, heightRatio)
 
     private var areWeMoving = false
+    private var lastJoystickX: Float? = null
+    private var lastJoystickY: Float? = null
+    private val reApplyMovement: Boolean
+        get() = PylaUtils.configBool(
+            com.pyla.ai.config.PylaConfig.load("cfg/debug_settings.toml").opt("re_apply_movement"),
+            false,
+        )
 
     fun screenshot(): FrameSnapshot {
         var snap = latestFrameNow()
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
-        while (snap == null) {
-            if (System.nanoTime() > deadline) throw IllegalStateException("No frame from MediaProjection")
-            try { Thread.sleep(50) } catch (_: InterruptedException) {}
+        val deadline = SystemClock.elapsedRealtime() + 15_000L
+        while (snap == null || snap.ageMs() > FRAME_STALE_TIMEOUT_MS) {
+            if (SystemClock.elapsedRealtime() > deadline) {
+                throw IllegalStateException("No fresh frame from MediaProjection")
+            }
+            try { Thread.sleep(50) } catch (_: InterruptedException) {
+                throw IllegalStateException("Interrupted while waiting for a capture frame")
+            }
             snap = latestFrameNow()
         }
         if (width != snap.width || height != snap.height) {
@@ -54,27 +65,33 @@ class WindowController(
 
     fun getLatestFrame(): Pair<FrameSnapshot?, Long> {
         val frame = latestFrameNow()
-        return frame to (frame?.createdAtNs ?: 0L)
+        return frame to (frame?.capturedAtMs ?: 0L)
     }
 
-    private var copyBuffer: IntArray = IntArray(0)
+    private var copyBuffer: IntArray? = null
 
     private fun latestFrameNow(): FrameSnapshot? {
-        val src = captureService.latestFrame() ?: return null
-        val argb = src.rgbBuffer ?: return null
-        val len = src.width * src.height
-        if (copyBuffer.size != len) copyBuffer = IntArray(len)
-        System.arraycopy(argb, 0, copyBuffer, 0, len)
-        val s = FrameSnapshot(src.width, src.height, copyBuffer)
-        s.createdAtNs = System.nanoTime()
-        return s
+        val timestamp = captureService.latestTimestampMs()
+        if (timestamp <= 0L || SystemClock.elapsedRealtime() - timestamp > FRAME_STALE_TIMEOUT_MS) return null
+        val copy = captureService.copyLatestFrame(copyBuffer) ?: return null
+        copyBuffer = copy.rgbBuffer
+        return FrameSnapshot(copy.width, copy.height, copy.rgbBuffer, copy.capturedAtMs)
     }
 
     fun move(x: Float, y: Float) {
         val input = InputService.get()
         if (input == null) { PylaLog.w(TAG, "move ignored: InputService not connected"); return }
+
+        // Match PC WindowController.move: press once, then only send a new logical MOVE when the
+        // target changes unless debug_settings.re_apply_movement asks for repeated MOVE events.
+        // InputService independently keeps the already-down accessibility pointer alive.
+        val unchanged = areWeMoving && lastJoystickX == x && lastJoystickY == y
+        if (unchanged && !reApplyMovement) return
+
         input.joystickMove(x, y)
         areWeMoving = true
+        lastJoystickX = x
+        lastJoystickY = y
     }
 
     fun releaseMovement() {
@@ -82,6 +99,8 @@ class WindowController(
         if (areWeMoving) {
             input.releaseJoystick()
             areWeMoving = false
+            lastJoystickX = null
+            lastJoystickY = null
         }
     }
 

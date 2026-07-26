@@ -1,5 +1,8 @@
 package com.pyla.ai.engine
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.util.Log
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
@@ -19,7 +22,15 @@ class LobbyAutomation(val windowController: WindowController) {
         PylaConfig.load("cfg/bot_config.toml").getDouble("idle_pixels_minimum", 500.0).toLong()
     private fun lobbyConfig() = PylaConfig.load("cfg/lobby_config.toml")
 
-    private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+    private val recognizerDelegate = lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+    private val recognizer get() = recognizerDelegate.value
+    private var sourceBitmap: Bitmap? = null
+    private var scaledOcrBitmap: Bitmap? = null
+    private val scalePaint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val ocrScaleDownFactor: Double get() =
+        PylaConfig.load("cfg/general_config.toml")
+            .getDouble("ocr_scale_down_factor", 0.8)
+            .coerceIn(0.1, 1.0)
 
     private val allBrawlersNames: Map<String, List<String>> by lazy {
         val f = PylaConfig.resolve("cfg/names.json")
@@ -69,17 +80,39 @@ class LobbyAutomation(val windowController: WindowController) {
     }
 
     private fun extractTextAndPositions(frame: FrameSnapshot): Map<String, Pair<Int, Int>> {
-        val bitmap = PylaUtils.frameToBitmap(frame)
-        val result = try {
-            Tasks.await(recognizer.process(InputImage.fromBitmap(bitmap, 0)), 15, TimeUnit.SECONDS)
-        } finally {
-            bitmap.recycle()
+        val oldSource = sourceBitmap
+        val source = PylaUtils.frameToBitmap(frame, oldSource)
+        if (source !== oldSource) oldSource?.recycle()
+        sourceBitmap = source
+
+        val scale = ocrScaleDownFactor
+        val ocrBitmap = if (scale < 0.999) {
+            val targetW = (source.width * scale).toInt().coerceAtLeast(1)
+            val targetH = (source.height * scale).toInt().coerceAtLeast(1)
+            var target = scaledOcrBitmap
+            if (target == null || target.isRecycled || target.width != targetW || target.height != targetH) {
+                target?.recycle()
+                target = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
+                scaledOcrBitmap = target
+            }
+            Canvas(target).drawBitmap(
+                source,
+                null,
+                android.graphics.Rect(0, 0, targetW, targetH),
+                scalePaint,
+            )
+            target
+        } else {
+            source
         }
+        val result = Tasks.await(recognizer.process(InputImage.fromBitmap(ocrBitmap, 0)), 15, TimeUnit.SECONDS)
+        val inverseScale = 1.0 / scale
         val out = HashMap<String, Pair<Int, Int>>()
         for (block in result.textBlocks) {
             for (line in block.lines) {
                 val box = line.boundingBox ?: continue
-                out[line.text] = box.centerX() to box.centerY()
+                out[line.text] =
+                    (box.centerX() * inverseScale).toInt() to (box.centerY() * inverseScale).toInt()
             }
         }
         return out
@@ -229,6 +262,16 @@ class LobbyAutomation(val windowController: WindowController) {
 
         Log.w(TAG, "Brawler '$target' not found after 100 scroll attempts")
         return "failed"
+    }
+
+    fun close() {
+        if (recognizerDelegate.isInitialized()) {
+            try { recognizerDelegate.value.close() } catch (_: Throwable) {}
+        }
+        sourceBitmap?.recycle()
+        sourceBitmap = null
+        scaledOcrBitmap?.recycle()
+        scaledOcrBitmap = null
     }
 
     private fun sleep(ms: Long) {

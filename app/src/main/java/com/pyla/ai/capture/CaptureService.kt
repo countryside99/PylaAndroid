@@ -7,7 +7,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
@@ -20,10 +19,9 @@ import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
 import android.view.Display
-import android.view.Surface
 import androidx.core.app.NotificationCompat
 import com.pyla.ai.R
-import java.util.concurrent.atomic.AtomicReference
+import com.pyla.ai.engine.DeviceProfile
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -35,14 +33,20 @@ class CaptureService : Service() {
 
     private val frameLock = ReentrantLock()
     private var latest: Frame? = null
-    private var latestTimestampMs: Long = 0
+    @Volatile private var latestTimestampMs: Long = 0
+    private var rowScratch = ByteArray(0)
 
     private var width = 1280
     private var height = 720
 
-    inner class Frame(val width: Int, val height: Int) {
-        @Volatile var rgbBuffer: IntArray? = null
-    }
+    private class Frame(val width: Int, val height: Int, val rgbBuffer: IntArray)
+
+    data class FrameCopy(
+        val width: Int,
+        val height: Int,
+        val rgbBuffer: IntArray,
+        val capturedAtMs: Long,
+    )
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -116,10 +120,11 @@ class CaptureService : Service() {
     }
 
     private fun captureSizeFor(rw: Int, rh: Int): Pair<Int, Int> {
-        if (rh <= MAX_CAPTURE_HEIGHT) return rw to rh
-        val scale = MAX_CAPTURE_HEIGHT.toDouble() / rh
+        val maxHeight = DeviceProfile.maxCaptureHeight.coerceAtMost(MAX_CAPTURE_HEIGHT)
+        if (rh <= maxHeight) return rw to rh
+        val scale = maxHeight.toDouble() / rh
         val w = (((rw * scale).toInt()) / 2) * 2
-        return w.coerceAtLeast(2) to MAX_CAPTURE_HEIGHT
+        return w.coerceAtLeast(2) to maxHeight
     }
 
     private val displayListener = object : DisplayManager.DisplayListener {
@@ -193,26 +198,26 @@ class CaptureService : Service() {
         frameLock.withLock {
             var frame = latest
             if (frame == null || frame.width != width || frame.height != height) {
-                frame = Frame(width, height)
-                frame.rgbBuffer = IntArray(width * height + width * 4)
+                frame = Frame(width, height, IntArray(expected))
                 latest = frame
             }
-            val out = frame.rgbBuffer ?: return@withLock
+            val out = frame.rgbBuffer
             if (rowStride == width * 4 && pixelStride == 4) {
-
                 buf.order(java.nio.ByteOrder.LITTLE_ENDIAN).asIntBuffer().get(out, 0, expected)
             } else {
+                if (rowScratch.size < rowStride) rowScratch = ByteArray(rowStride)
                 var pos = 0
-                val rowBytes = ByteArray(rowStride)
                 for (row in 0 until height) {
                     buf.position(row * rowStride)
-                    buf.get(rowBytes, 0, rowStride.coerceAtMost(buf.remaining()))
+                    val bytesRead = rowStride.coerceAtMost(buf.remaining())
+                    buf.get(rowScratch, 0, bytesRead)
                     var off = 0
                     for (x in 0 until width) {
-                        out[pos++] = (rowBytes[off].toInt() and 0xFF) or
-                                ((rowBytes[off + 1].toInt() and 0xFF) shl 8) or
-                                ((rowBytes[off + 2].toInt() and 0xFF) shl 16) or
-                                ((rowBytes[off + 3].toInt() and 0xFF) shl 24)
+                        if (off + 2 >= bytesRead) break
+                        out[pos++] = (rowScratch[off].toInt() and 0xFF) or
+                            ((rowScratch[off + 1].toInt() and 0xFF) shl 8) or
+                            ((rowScratch[off + 2].toInt() and 0xFF) shl 16) or
+                            (if (off + 3 < bytesRead) (rowScratch[off + 3].toInt() and 0xFF) shl 24 else -0x1000000)
                         off += pixelStride
                     }
                     if (pos >= expected) break
@@ -222,9 +227,18 @@ class CaptureService : Service() {
         }
     }
 
-    fun latestFrame(): Frame? = frameLock.withLock { latest }
+    /** Copies a complete frame while the producer lock is held, preventing torn screenshots. */
+    fun copyLatestFrame(reuse: IntArray? = null): FrameCopy? = frameLock.withLock {
+        val frame = latest ?: return@withLock null
+        val required = frame.width * frame.height
+        val destination = reuse?.takeIf { it.size == required } ?: IntArray(required)
+        System.arraycopy(frame.rgbBuffer, 0, destination, 0, required)
+        FrameCopy(frame.width, frame.height, destination, latestTimestampMs)
+    }
+
     fun latestTimestampMs(): Long = latestTimestampMs
 
+    @Synchronized
     private fun stopCapture() {
         try {
             (getSystemService(Context.DISPLAY_SERVICE) as DisplayManager)
@@ -232,7 +246,9 @@ class CaptureService : Service() {
         } catch (_: Throwable) {}
         virtualDisplay?.release(); virtualDisplay = null
         imageReader?.close(); imageReader = null
-        projection?.stop(); projection = null
+        val activeProjection = projection
+        projection = null
+        try { activeProjection?.stop() } catch (_: Throwable) {}
         frameLock.withLock { latest = null; latestTimestampMs = 0 }
         Log.i(TAG, "Capture stopped")
     }

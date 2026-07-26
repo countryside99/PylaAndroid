@@ -18,7 +18,7 @@ class StageManager(
     val trophyObserver = TrophyObserver()
 
     private val playAgainOnWin: Boolean get() =
-        PylaConfig.load("cfg/bot_config.toml").getString("play_again_on_win", "no").lowercase() == "yes"
+        PylaUtils.configBool(PylaConfig.load("cfg/bot_config.toml").opt("play_again_on_win"), false)
 
     private var closePopupIcon: Mat? = null
     private var timeSinceLastStatChange: Double = System.currentTimeMillis() / 1000.0
@@ -107,9 +107,11 @@ class StageManager(
             org.opencv.core.Scalar(75.0, 255.0, 255.0), mask)
         hsv.release()
         val contours = ArrayList<org.opencv.core.MatOfPoint>()
-        org.opencv.imgproc.Imgproc.findContours(mask, contours, Mat(),
+        val hierarchy = Mat()
+        org.opencv.imgproc.Imgproc.findContours(mask, contours, hierarchy,
             org.opencv.imgproc.Imgproc.RETR_EXTERNAL,
             org.opencv.imgproc.Imgproc.CHAIN_APPROX_SIMPLE)
+        hierarchy.release()
         mask.release()
         val minArea = (h * 0.08) * (h * 0.08)
         val blobs = contours.mapNotNull { c ->
@@ -287,6 +289,11 @@ class StageManager(
             val cy = mmr.maxLoc.y + template.rows() / 2
             windowController.click(cx.toFloat(), cy.toFloat())
         }
+    }
+
+    fun close() {
+        closePopupIcon?.release()
+        closePopupIcon = null
     }
 
     private fun toInt(x: Any?, default: Int = 0): Int = when (x) {

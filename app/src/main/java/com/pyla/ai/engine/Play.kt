@@ -62,7 +62,7 @@ class Play(
     private val superTresholdSec: Double get() = timeConfig().getDouble("super", 0.1)
     private val gadgetTresholdSec: Double get() = timeConfig().getDouble("gadget", 0.1)
     private val hyperchargeTresholdSec: Double get() = timeConfig().getDouble("hypercharge", 0.1)
-    private val wallsTresholdSec: Double get() = maxOf(timeConfig().getDouble("wall_detection", 0.1), 0.35)
+    private val wallsTresholdSec: Double get() = timeConfig().getDouble("wall_detection", 0.1)
     private val noDetectionProceedDelaySec: Double get() = timeConfig().getDouble("no_detection_proceed", 8.0)
 
     private val gadgetPixelsMin: Long get() = botConfig().getDouble("gadget_pixels_minimum", 1300.0).toLong()
@@ -771,6 +771,13 @@ class Play(
         null -> default
         is Boolean -> v
         else -> Py.truthy(v)
+    }
+
+    fun close() {
+        frame = null
+        detectMainInfo.close()
+        detectTileDetector?.close()
+        detectCenteredTileDetector?.close()
     }
 }
 
