@@ -12,7 +12,7 @@ PylaAndroid is committed to transparent and responsible AI development and follo
 
 [![Learn more](https://img.shields.io/badge/Learn%20More-REAL%20Rating-0B6E99?style=for-the-badge&logoColor=white)](https://www.realgoodai.org/real-rating)
 
-# PylaAndroid
+# What is PylaAndroid?
 PylaAndroid is a simple and easy to use without root or ADB needed PylaAI port on-device.
 # Information
 Every PylaAI's file such as play.py, trophy_observer.py is fully rewritten in Kotlin as play.kt, trophy_observer.kt and the others.
