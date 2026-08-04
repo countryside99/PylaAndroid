@@ -1,8 +1,17 @@
+# PylaAndroid
+
 ## 🤝 Responsible AI Usage
 
 PylaAndroid is committed to transparent and responsible AI development and follows the principles of the **REAL Rating** framework for disclosing AI usage.
 
-[![REAL Rating](https://img.shields.io/badge/REAL%20Rating-Promoting%20Responsible%20AI%20Use-0B6E99?style=for-the-badge)](https://www.realgoodai.org/real-rating)
+<p align="center">
+  <a href="https://www.realgoodai.org/real-rating">
+    <img src="RealGoodAI.gif" width="150" alt="Real Good AI logo">
+  </a>
+</p>
+
+[![Learn more](https://img.shields.io/badge/Learn%20More-REAL%20Rating-0B6E99?style=for-the-badge&logoColor=white)](https://www.realgoodai.org/real-rating)
+
 # PylaAndroid
 PylaAndroid is a simple and easy to use without root or ADB needed PylaAI port on-device.
 # Information
