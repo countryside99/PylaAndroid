@@ -1,14 +1,13 @@
 # PylaAndroid
 
 ## 🤝 Responsible AI Usage
-
-PylaAndroid is committed to transparent and responsible AI development and follows the principles of the **REAL Rating** framework for disclosing AI usage.
-
 <p align="center">
   <a href="https://www.realgoodai.org/real-rating">
     <img src="RealGoodAI.gif" width="150" alt="Real Good AI logo">
   </a>
 </p>
+
+PylaAndroid is committed to transparent and responsible AI development and follows the principles of the **REAL Rating** framework for disclosing AI usage.
 
 [![Learn more](https://img.shields.io/badge/Learn%20More-REAL%20Rating-0B6E99?style=for-the-badge&logoColor=white)](https://www.realgoodai.org/real-rating)
 
