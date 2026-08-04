@@ -18,7 +18,7 @@ class StageManager(
     val trophyObserver = TrophyObserver()
 
     private val playAgainOnWin: Boolean get() =
-        PylaConfig.load("cfg/bot_config.toml").getString("play_again_on_win", "no").lowercase() == "yes"
+        PylaUtils.configBool(PylaConfig.load("cfg/bot_config.toml").opt("play_again_on_win"), false)
 
     private var closePopupIcon: Mat? = null
     private var timeSinceLastStatChange: Double = System.currentTimeMillis() / 1000.0
@@ -107,9 +107,11 @@ class StageManager(
             org.opencv.core.Scalar(75.0, 255.0, 255.0), mask)
         hsv.release()
         val contours = ArrayList<org.opencv.core.MatOfPoint>()
-        org.opencv.imgproc.Imgproc.findContours(mask, contours, Mat(),
+        val hierarchy = Mat()
+        org.opencv.imgproc.Imgproc.findContours(mask, contours, hierarchy,
             org.opencv.imgproc.Imgproc.RETR_EXTERNAL,
             org.opencv.imgproc.Imgproc.CHAIN_APPROX_SIMPLE)
+        hierarchy.release()
         mask.release()
         val minArea = (h * 0.08) * (h * 0.08)
         val blobs = contours.mapNotNull { c ->
@@ -224,11 +226,28 @@ class StageManager(
                 if (currentStateFromScreen() == "match") { Log.i(TAG, "Match started successfully!"); return }
                 try { Thread.sleep(500) } catch (_: InterruptedException) {}
             }
-            Log.i(TAG, "Match did not start within 25s, returning to lobby.")
-            windowController.press("proceed")
-            try { Thread.sleep(2000) } catch (_: InterruptedException) {}
+            // PC parity: when play-again does not lead to a match, restart the game instead
+            // of risking sitting on a stuck screen forever.
+            Log.w(TAG, "Match did not start within 25s, restarting the game.")
+            relaunchGame()
+        } else if (nowSec() - endScreenTime > 35) {
+            // PC parity: the end screen never went away (frozen game / missed clicks),
+            // restart the game so the bot can never get stuck here.
+            Log.w(TAG, "End screen timeout reached, restarting the game.")
+            relaunchGame()
         }
         Log.i(TAG, "Game has ended, current=$currentState")
+    }
+
+    private fun relaunchGame() {
+        try {
+            val pkg = GameLauncher.gamePackage()
+            BotStatus.action("Restarting Brawl Stars")
+            GameLauncher.launch(com.pyla.ai.PylaApp.ctx(), pkg)
+        } catch (t: Throwable) {
+            Log.w(TAG, "game relaunch failed: ${t.message}")
+        }
+        try { Thread.sleep(2000) } catch (_: InterruptedException) {}
     }
 
 
@@ -287,6 +306,11 @@ class StageManager(
             val cy = mmr.maxLoc.y + template.rows() / 2
             windowController.click(cx.toFloat(), cy.toFloat())
         }
+    }
+
+    fun close() {
+        closePopupIcon?.release()
+        closePopupIcon = null
     }
 
     private fun toInt(x: Any?, default: Int = 0): Int = when (x) {

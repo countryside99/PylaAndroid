@@ -32,7 +32,13 @@ class Play(
     closeTileDetectorModelPath: String,
     var pylaScript: PylaScript? = null,
 ) {
-    companion object { private const val TAG = "PylaPlay" }
+    companion object {
+        private const val TAG = "PylaPlay"
+        private const val MIN_SIGNIFICANT_MOVEMENT = 2.0
+        // Rotation of dismissal buttons tried on unrecognized "match"-looking screens
+        // (reward splashes, claim dialogs, "got it" popups, tap-anywhere screens).
+        private val DISMISSAL_KEYS = listOf("proceed", "proceed", "continue_or_equip", "middle_got_it", "middle")
+    }
 
     private fun botConfig(): TomlLite = PylaConfig.load("cfg/bot_config.toml")
     private fun timeConfig(): TomlLite = PylaConfig.load("cfg/time_tresholds.toml")
@@ -62,7 +68,7 @@ class Play(
     private val superTresholdSec: Double get() = timeConfig().getDouble("super", 0.1)
     private val gadgetTresholdSec: Double get() = timeConfig().getDouble("gadget", 0.1)
     private val hyperchargeTresholdSec: Double get() = timeConfig().getDouble("hypercharge", 0.1)
-    private val wallsTresholdSec: Double get() = maxOf(timeConfig().getDouble("wall_detection", 0.1), 0.35)
+    private val wallsTresholdSec: Double get() = timeConfig().getDouble("wall_detection", 0.1)
     private val noDetectionProceedDelaySec: Double get() = timeConfig().getDouble("no_detection_proceed", 8.0)
 
     private val gadgetPixelsMin: Long get() = botConfig().getDouble("gadget_pixels_minimum", 1300.0).toLong()
@@ -72,6 +78,8 @@ class Play(
     private val entityDetectionConfidence: Float get() = botConfig().getDouble("entity_detection_confidence", 0.65).toFloat()
     private val secondsToHoldAttackAfterReachingMax: Double get() = botConfig().getDouble("seconds_to_hold_attack_after_reaching_max", 1.5)
     private val minimumMovementDelay: Double get() = botConfig().getDouble("minimum_movement_delay", 0.1)
+    private val idleWanderDelaySec: Double get() = botConfig().getDouble("idle_wander_delay", 3.0)
+    private val wanderChangeIntervalSec: Double get() = botConfig().getDouble("wander_change_interval", 2.5)
 
     private val fixMovementKeys = FixMovementState(
         delayToTrigger = PylaConfig.load("cfg/bot_config.toml").getDouble("unstuck_movement_delay", 2.4),
@@ -109,6 +117,9 @@ class Play(
 
     private var lastMovement: Any? = ""
     private var lastMovementChangeTime: Double = nowSec()
+    private var idleSince: Double = nowSec()
+    private var wanderAngle: Double = Random.nextDouble(0.0, 2.0 * PI)
+    private var wanderChangeTime: Double = nowSec()
 
     private var frame: Mat? = null
 
@@ -509,17 +520,21 @@ class Play(
         }
 
         if (!hasPlayer || state != "match") {
-            if (currentTime - timeSincePlayerLastFound > 1.0) {
+            if (state == "match") {
+                applyBlindAntiIdle(currentTime)
+            } else if (currentTime - timeSincePlayerLastFound > 1.0) {
                 windowController.releaseMovement()
             }
             if (currentTime - timeSinceLastProceeding > noDetectionProceedDelaySec) {
                 val currentState = StateFinder.getState(frame)
                 if (currentState != "match") {
+                    blindProceedAttempts = 0
                     onStateChange(currentState)
                     timeSinceLastProceeding = currentTime
                 } else {
-                    Log.i(TAG, "haven't detected the player in a while proceeding")
-                    windowController.press("proceed")
+                    blindProceedAttempts++
+                    Log.i(TAG, "haven't detected the player in a while, dismissing screen (attempt $blindProceedAttempts)")
+                    pressDismissalButton(blindProceedAttempts)
                     timeSinceLastProceeding = currentTime
                 }
             }
@@ -527,6 +542,7 @@ class Play(
         }
 
         timeSinceLastProceeding = currentTime
+        blindProceedAttempts = 0
 
         if (currentTime - timeSinceHyperchargeChecked > hyperchargeTresholdSec) {
             isHyperchargeReady = checkIfHyperchargeReady(frame)
@@ -543,7 +559,7 @@ class Play(
 
         currentBrawler = brawler
         val movement = computeScriptMovement(brawler, data)
-        doMovement(movement)
+        applyAntiIdleMovement(movement, currentTime, data)
     }
 
     private fun computeScriptMovement(brawler: String, data: Map<String, MutableList<FloatArray>>): Pair<Double, Double>? {
@@ -581,6 +597,125 @@ class Play(
     private fun movementEquals(a: Pair<Double, Double>, b: Any?): Boolean {
         if (b !is Pair<*, *>) return false
         return a.first == b.first && a.second == b.second
+    }
+
+    /**
+     * In-match inactivity guard. Brawl Stars only ever kicks for idleness inside a match
+     * (the lobby never kicks), so while the state is "match" the character must never
+     * stand still long enough for the inactivity timer to fire:
+     *  - a significant playstyle movement is forwarded untouched,
+     *  - a null/tiny movement keeps the previous joystick direction for a short grace
+     *    period (mirroring the PC keyboard behaviour where held keys stay pressed,
+     *    instead of lifting the virtual joystick and freezing the character),
+     *  - after idle_wander_delay seconds of stillness a wander movement is forced, so the
+     *    inactivity timer is always reset long before the game can replace us with a bot.
+     */
+    private fun applyAntiIdleMovement(
+        movement: Pair<Double, Double>?,
+        currentTime: Double,
+        data: Map<String, MutableList<FloatArray>>
+    ) {
+        if (movement != null && hypot(movement.first, movement.second) >= MIN_SIGNIFICANT_MOVEMENT) {
+            if (antiIdleForcing) {
+                antiIdleForcing = false
+                PylaLog.p(TAG, "anti-idle: playstyle movement resumed")
+            }
+            idleSince = currentTime
+            doMovement(movement)
+            return
+        }
+        if (currentTime - idleSince < idleWanderDelaySec) {
+            // Grace period: keep the joystick exactly as it is (do NOT release it), so the
+            // character keeps walking in the last direction like it does on PC.
+            return
+        }
+        if (!antiIdleForcing) {
+            antiIdleForcing = true
+            PylaLog.p(TAG, "anti-idle: no significant movement for ${idleWanderDelaySec}s in match, forcing wander")
+            BotStatus.action("Anti-idle: forcing movement")
+        }
+        val playerBox = data["player"]?.firstOrNull()
+        doMovement(clampMovement(generateWanderMovement(playerBox, data["wall"] ?: emptyList(), currentTime)))
+    }
+
+    /**
+     * Anti-idle for the "in match but player not detected" case (respawn or a detection
+     * dropout). The PC bot just releases the keys here, which on Android lifts the virtual
+     * joystick and leaves the character standing still until the game kicks it for
+     * inactivity. Instead, after the usual grace period, keep wandering blind; the
+     * proceed logic keeps running and exits once the match is really over.
+     */
+    private fun applyBlindAntiIdle(currentTime: Double) {
+        if (currentTime - idleSince < idleWanderDelaySec) {
+            if (currentTime - timeSincePlayerLastFound > 1.0) {
+                windowController.releaseMovement()
+            }
+            return
+        }
+        if (!antiIdleForcing) {
+            antiIdleForcing = true
+            PylaLog.p(TAG, "anti-idle: player not visible for ${idleWanderDelaySec}s in match, wandering blind")
+            BotStatus.action("Anti-idle: wandering (player not visible)")
+        }
+        doMovement(clampMovement(generateWanderMovement(null, emptyList(), currentTime)))
+    }
+
+    private var antiIdleForcing = false
+    private var blindProceedAttempts = 0
+
+    /**
+     * When the screen still looks like "match" but no player has been visible for a long
+     * time, the game is really showing an unrecognized reward / claim / dialog screen
+     * (e.g. a skin reward splash after a star drop). The PC bot only presses "proceed"
+     * here, which leaves the bot stuck forever on screens whose dismissal button sits
+     * elsewhere. Rotate through the known dismissal buttons instead, so every such screen
+     * eventually gets closed and the bot can never get stuck on a menu or reward.
+     */
+    private fun pressDismissalButton(attempt: Int) {
+        val key = DISMISSAL_KEYS[(attempt - 1) % DISMISSAL_KEYS.size]
+        BotStatus.action("Dismissing unrecognized screen via '$key'")
+        windowController.press(key)
+    }
+
+    private fun generateWanderMovement(
+        playerBox: FloatArray?,
+        walls: List<FloatArray>,
+        currentTime: Double
+    ): Pair<Double, Double> {
+        val r = PylaUtils.JOYSTICK_RADIUS.toDouble()
+
+        if (currentTime - wanderChangeTime > wanderChangeIntervalSec) {
+            wanderAngle = Random.nextDouble(0.0, 2.0 * PI)
+            wanderChangeTime = currentTime
+        }
+
+        val primary = (cos(wanderAngle) * r) to (sin(wanderAngle) * r)
+        if (!isPathBlocked(playerBox, primary, walls)) return primary
+
+        for (step in 1..7) {
+            val offset = step * PI / 4.0
+            for (sign in listOf(1.0, -1.0)) {
+                val angle = wanderAngle + offset * sign
+                val candidate = (cos(angle) * r) to (sin(angle) * r)
+                if (!isPathBlocked(playerBox, candidate, walls)) {
+                    wanderAngle = angle
+                    wanderChangeTime = currentTime
+                    return candidate
+                }
+            }
+        }
+
+        val d = r * 0.7071
+        val allMoves = mutableListOf(
+            0.0 to -r, d to -d, r to 0.0, d to d,
+            0.0 to r, -d to d, -r to 0.0, -d to -d
+        )
+        allMoves.shuffle(Random)
+        for (move in allMoves) {
+            if (!isPathBlocked(playerBox, move, walls)) return move
+        }
+
+        return primary
     }
 
     // ---------- .pyla context bridge ----------
@@ -771,6 +906,13 @@ class Play(
         null -> default
         is Boolean -> v
         else -> Py.truthy(v)
+    }
+
+    fun close() {
+        frame = null
+        detectMainInfo.close()
+        detectTileDetector?.close()
+        detectCenteredTileDetector?.close()
     }
 }
 

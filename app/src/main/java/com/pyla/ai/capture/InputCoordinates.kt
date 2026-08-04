@@ -17,6 +17,8 @@ object InputCoordinates {
         "super" to Spot(1510, 880, Anchor.RIGHT),
         "play_again" to Spot(1360, 920, Anchor.RIGHT),
         "continue_or_equip" to Spot(700, 1000, Anchor.CENTER),
+        "middle_got_it" to Spot(960, 980, Anchor.CENTER),
+        "middle" to Spot(960, 540, Anchor.CENTER),
     )
 
     @Volatile private var captureW: Int = BASE_W

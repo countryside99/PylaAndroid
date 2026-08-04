@@ -36,6 +36,7 @@ object StateFinder {
     private val templateCache = HashMap<String, Mat>()
     private val templateMissingLogged = HashSet<String>()
 
+    @Synchronized
     private fun loadTemplate(path: String, w: Int, h: Int): Mat {
         val key = "$path|$w|$h"
         templateCache[key]?.let { return it }
@@ -161,7 +162,9 @@ object StateFinder {
         val minBlobArea = (h * 0.08) * (h * 0.08)
         if (org.opencv.core.Core.countNonZero(mask) < minBlobArea * 3) { mask.release(); return false }
         val contours = ArrayList<org.opencv.core.MatOfPoint>()
-        Imgproc.findContours(mask, contours, Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
+        val hierarchy = Mat()
+        Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
+        hierarchy.release()
         mask.release()
         val bigBlobs = contours.count { Imgproc.contourArea(it) >= minBlobArea }
         contours.forEach { it.release() }

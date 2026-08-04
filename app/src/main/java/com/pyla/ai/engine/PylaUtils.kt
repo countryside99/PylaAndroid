@@ -13,6 +13,7 @@ object PylaUtils {
     const val PLAYER_HIT_CIRCLE_RADIUS = 53
 
     private val rgbScratch = ThreadLocal<ByteArray>()
+    private val bitmapScratch = ThreadLocal<IntArray>()
 
     fun argbToRgbMat(argb: IntArray, w: Int, h: Int): Mat {
         val needed = w * h * 3
@@ -37,15 +38,31 @@ object PylaUtils {
 
     fun frameToMat(frame: FrameSnapshot): Mat = argbToRgbMat(frame.argb, frame.width, frame.height)
 
-    fun frameToBitmap(frame: FrameSnapshot): android.graphics.Bitmap {
+    fun frameToBitmap(
+        frame: FrameSnapshot,
+        reusable: android.graphics.Bitmap? = null,
+    ): android.graphics.Bitmap {
+        val required = frame.width * frame.height
+        var px = bitmapScratch.get()
+        if (px == null || px.size != required) {
+            px = IntArray(required)
+            bitmapScratch.set(px)
+        }
         val src = frame.argb
-        val px = IntArray(frame.width * frame.height)
-        val len = px.size.coerceAtMost(src.size)
+        val len = required.coerceAtMost(src.size)
         for (i in 0 until len) {
             val p = src[i]
             px[i] = (p and 0xFF00FF00.toInt()) or ((p and 0xFF) shl 16) or ((p shr 16) and 0xFF)
         }
-        return android.graphics.Bitmap.createBitmap(px, frame.width, frame.height, android.graphics.Bitmap.Config.ARGB_8888)
+        val bitmap = reusable?.takeIf {
+            !it.isRecycled && it.isMutable && it.width == frame.width && it.height == frame.height
+        } ?: android.graphics.Bitmap.createBitmap(
+            frame.width,
+            frame.height,
+            android.graphics.Bitmap.Config.ARGB_8888,
+        )
+        bitmap.setPixels(px, 0, frame.width, 0, 0, frame.width, frame.height)
+        return bitmap
     }
 
     fun countHsvPixels(rgb: Mat, lowHsv: DoubleArray, highHsv: DoubleArray): Int {
