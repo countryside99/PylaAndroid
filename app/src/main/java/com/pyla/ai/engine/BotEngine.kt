@@ -1,0 +1,497 @@
+package com.pyla.ai.engine
+
+import android.content.Context
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.PowerManager
+import android.os.Process
+import android.os.SystemClock
+import android.util.Log
+import com.pyla.ai.capture.CaptureService
+import com.pyla.ai.config.PylaConfig
+import com.pyla.ai.pyla.PlaystyleRegistry
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
+
+class BotEngine(
+    val appContext: Context,
+    var queueData: MutableList<MutableMap<String, Any>>,
+) {
+    companion object {
+        private const val TAG = "PylaEngine"
+        private const val CAPTURE_STARTUP_TIMEOUT_MS = 15_000L
+        private const val NO_DETECTIONS_ACTION_THRESHOLD_SEC = 8 * 60.0
+        @Volatile var instance: BotEngine? = null
+
+        fun saveBrawlerData(data: List<MutableMap<String, Any>>) {
+            val arr = JSONArray()
+            for (m in data) {
+                val o = JSONObject()
+                for ((k, v) in m) o.put(k, when (v) {
+                    is Number -> v
+                    is Boolean -> v
+                    is String -> v
+                    is List<*> -> JSONArray(v)
+                    else -> v.toString()
+                })
+                arr.put(o)
+            }
+            File(PylaConfig.root(), "latest_brawler_data.json").writeText(arr.toString())
+        }
+
+        fun loadBrawlerData(): MutableList<MutableMap<String, Any>> {
+            val f = File(PylaConfig.root(), "latest_brawler_data.json")
+            if (!f.exists()) return mutableListOf()
+            return try {
+                val arr = JSONArray(f.readText())
+                val out = mutableListOf<MutableMap<String, Any>>()
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    val m = HashMap<String, Any>()
+                    for (k in o.keys()) m[k] = o.get(k)
+                    out.add(m)
+                }
+                out
+            } catch (t: Throwable) {
+                Log.w(TAG, "load queue: ${t.message}")
+                mutableListOf()
+            }
+        }
+    }
+
+    private val stopRequested = AtomicBoolean(false)
+    private val paused = AtomicBoolean(false)
+    private val stateLock = Any()
+
+    @Volatile var latestState: String? = null
+        private set
+
+    private lateinit var windowController: WindowController
+    private lateinit var timeManagement: TimeManagement
+    private lateinit var lobbyAutomator: LobbyAutomation
+    private lateinit var play: Play
+    private lateinit var stageManager: StageManager
+
+    private lateinit var loopThread: HandlerThread
+    private lateinit var stateThread: HandlerThread
+
+    private var inCooldown = false
+    private var cooldownStartMs = 0L
+    private val cooldownDurationMs = 3 * 60 * 1000L
+    private var startTimeMs = 0L
+    private var effectiveMaxIps: Int = DeviceProfile.autoMaxIps
+    private var thermalMaxIps: Int = effectiveMaxIps
+    private var lastThermalCheckMs = 0L
+    private var lastThermalLoggedLimit = -1
+    private val powerManager: PowerManager? by lazy {
+        appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+    }
+    private var crashCheckIntervalMs = 5_000L
+
+    private val gamePackage: String get() = try { GameLauncher.gamePackage() } catch (_: Throwable) { GameLauncher.DEFAULT_PACKAGE }
+    private val runForMinutes: Int get() = try { PylaConfig.load("cfg/general_config.toml").getInt("run_for_minutes", 0) } catch (_: Throwable) { 0 }
+    private var lastGameLaunchMs = 0L
+    private var matchLoopMs = 0L
+    private var matchLoopSamples = 0
+
+    fun start() {
+        stopRequested.set(false); paused.set(false)
+        instance = this
+        BotStatus.engineRunning = true
+        BotStatus.enginePaused = false
+        BotStatus.lastError = ""
+        BotStatus.inputConnected = com.pyla.ai.input.InputService.isConnected()
+        BotStatus.queueSummary = queueData.joinToString(", ") { it["brawler"].toString() }
+
+        PylaLog.p(TAG, "Auto-opening Brawl Stars ($gamePackage)")
+        if (GameLauncher.launch(appContext, gamePackage)) {
+            lastGameLaunchMs = System.currentTimeMillis()
+        }
+        loopThread = HandlerThread("pyla-bot-loop").apply { start() }
+        Handler(loopThread.looper).post {
+            try {
+                bootstrapAndRun()
+            } catch (t: Throwable) {
+                PylaLog.e(TAG, "engine bootstrap failed", t)
+                BotStatus.error("Engine start failed: ${t.message}")
+                try { stop() } catch (_: Throwable) {}
+            } finally {
+                cleanupResources()
+            }
+        }
+    }
+
+    private fun bootstrapAndRun() {
+        val deadlineMs = System.currentTimeMillis() + CAPTURE_STARTUP_TIMEOUT_MS
+        var capture = CaptureService.instance
+        while (capture == null && !stopRequested.get()) {
+            if (System.currentTimeMillis() > deadlineMs) {
+                Log.e(TAG, "CaptureService did not come up within ${CAPTURE_STARTUP_TIMEOUT_MS / 1000}s")
+                BotStatus.error("CaptureService not running (screen capture permission not granted?)")
+                stop()
+                return
+            }
+            try { Thread.sleep(50) } catch (_: InterruptedException) { return }
+            capture = CaptureService.instance
+        }
+        if (capture == null) return
+        PylaLog.p(TAG, "CaptureService is up, initializing engine")
+
+        windowController = WindowController(capture)
+        timeManagement = TimeManagement()
+        lobbyAutomator = LobbyAutomation(windowController)
+
+        val generalConfig = PylaConfig.load("cfg/general_config.toml")
+        effectiveMaxIps = generalConfig.getString("max_ips", "auto").trim().toIntOrNull()
+            ?.takeIf { it > 0 }
+            ?.coerceAtMost(60)
+            ?: DeviceProfile.autoMaxIps
+        thermalMaxIps = effectiveMaxIps
+        PylaLog.p(TAG, "Runtime profile: ${DeviceProfile.summary()} effectiveMaxIps=$effectiveMaxIps")
+        crashCheckIntervalMs = (PylaConfig.load("cfg/time_tresholds.toml")
+            .getDouble("check_if_brawl_stars_crashed", 5.0) * 1000.0)
+            .toLong().coerceAtLeast(10L)
+
+        val selectedPlaystyle = PylaConfig.load("cfg/bot_config.toml")
+            .getString("current_playstyle", PlaystyleRegistry.DEFAULT_PLAYSTYLE)
+            .ifBlank { PlaystyleRegistry.DEFAULT_PLAYSTYLE }
+        var pylaScript = PlaystyleRegistry.load(selectedPlaystyle)
+        if (pylaScript == null && selectedPlaystyle != PlaystyleRegistry.DEFAULT_PLAYSTYLE) {
+            PylaLog.w(TAG, "Playstyle '$selectedPlaystyle' failed to load, falling back to default")
+            pylaScript = PlaystyleRegistry.load(PlaystyleRegistry.DEFAULT_PLAYSTYLE)
+        }
+        if (pylaScript == null) {
+            pylaScript = PlaystyleRegistry.listMeta().firstOrNull()?.let { PlaystyleRegistry.load(it.filename) }
+        }
+        if (pylaScript == null) {
+            BotStatus.error("No playstyle (.pyla) could be loaded")
+            PylaLog.e(TAG, "No .pyla playstyle available; aborting start")
+            stop()
+            return
+        }
+        PylaLog.p(TAG, "Selected playstyle: ${pylaScript.meta.displayName} (gamemodes=${pylaScript.meta.gamemodes})")
+
+        applyConfiguredPlayOrder()
+        val playstyleInfo = HashMap<String, Any>()
+        playstyleInfo["name"] = "${pylaScript.meta.displayName} (Android)"
+        playstyleInfo["gamemodes"] = pylaScript.meta.gamemodes
+        playstyleInfo["brawlers"] = pylaScript.meta.brawlers.ifEmpty { listOf("all") }
+
+        play = Play(
+            windowController,
+            mainInfoModelPath = "models/mainInGameModel.onnx",
+            tileDetectorModelPath = "models/tileDetector.onnx",
+            closeTileDetectorModelPath = "models/closeTileDetector.onnx",
+            pylaScript = pylaScript,
+        )
+        stageManager = StageManager(
+            queueData, lobbyAutomator, windowController,
+            getState = { latestState },
+            playstyleInfo = playstyleInfo,
+        )
+
+        startTimeMs = System.currentTimeMillis()
+        saveBrawlerData(queueData)
+
+        stateThread = HandlerThread("pyla-state-checker", Process.THREAD_PRIORITY_BACKGROUND).apply { start() }
+        Handler(stateThread.looper).post {
+            try {
+                stateCheckerLoop()
+            } catch (t: Throwable) {
+                PylaLog.e(TAG, "state checker died", t)
+                BotStatus.error("State checker failed: ${t.message}")
+            }
+        }
+
+        PylaLog.p(TAG, "Initialization complete, starting main loop. queue=${queueData.size} brawlers")
+        queueData.forEachIndexed { i, m -> PylaLog.p(TAG, "queue[$i]: brawler=${m["brawler"]} type=${m["type"]} trophies=${m["trophies"]} push_until=${m["push_until"]} auto=${m["automatically_pick"]}") }
+        mainLoop()
+    }
+
+    fun stop() {
+        stopRequested.set(true)
+        try { if (::windowController.isInitialized) windowController.releaseMovement() } catch (_: Throwable) {}
+        if (::loopThread.isInitialized) loopThread.quitSafely()
+        if (::stateThread.isInitialized) stateThread.quitSafely()
+        if (instance === this) instance = null
+        BotStatus.engineRunning = false
+        BotStatus.enginePaused = false
+        BotStatus.currentState = ""
+        Log.i(TAG, "Bot engine stopped")
+    }
+
+    private fun cleanupResources() {
+        try { if (::play.isInitialized) play.close() } catch (t: Throwable) { Log.w(TAG, "play cleanup: ${t.message}") }
+        try { if (::lobbyAutomator.isInitialized) lobbyAutomator.close() } catch (t: Throwable) { Log.w(TAG, "OCR cleanup: ${t.message}") }
+        try { if (::stageManager.isInitialized) stageManager.close() } catch (t: Throwable) { Log.w(TAG, "stage cleanup: ${t.message}") }
+    }
+
+    fun setPaused(p: Boolean) {
+        paused.set(p)
+        BotStatus.enginePaused = p && BotStatus.engineRunning
+        BotStatus.action(if (p) "Bot paused" else "Bot resumed")
+    }
+
+    fun isPaused(): Boolean = paused.get()
+
+    private fun stateCheckerLoop() {
+        var loggedNoCapture = false
+        var loggedFirstFrame = false
+        var lastLoggedState: String? = null
+        val timeConfig = PylaConfig.load("cfg/time_tresholds.toml")
+        val stateCheckIntervalMs =
+            (timeConfig.getDouble("state_check", 3.0) * 1000).toLong().coerceAtLeast(10L)
+        val idleIntervalMs =
+            (timeConfig.getDouble("idle", 3.0) * 1000).toLong().coerceAtLeast(10L)
+        // As on PC, no_detections controls how often stale detections are checked. The actual
+        // recovery threshold is eight minutes, not the check interval itself.
+        val noDetectionsCheckIntervalMs =
+            (timeConfig.getDouble("no_detections", 30.0) * 1000).toLong().coerceAtLeast(10L)
+        var lastStateCheckMs = 0L
+        var lastIdleCheckMs = 0L
+        var lastNoDetectionsCheckMs = 0L
+        var lastCrashCheckMs = 0L
+        var stateFrameBuffer: IntArray? = null
+        while (!stopRequested.get()) {
+            try {
+                val now = System.currentTimeMillis()
+                if (now - lastCrashCheckMs >= crashCheckIntervalMs) {
+                    lastCrashCheckMs = now
+                    gameWatchdog(now)
+                }
+                val fg = com.pyla.ai.input.InputService.foregroundPackage()
+                val gameInFront = fg == null || fg == gamePackage || fg == appContext.packageName
+                val capture = CaptureService.instance
+                if (capture == null) {
+                    if (!loggedNoCapture) { PylaLog.w(TAG, "state checker: CaptureService.instance is null"); loggedNoCapture = true }
+                } else if (gameInFront && now - lastStateCheckMs >= stateCheckIntervalMs) {
+                    loggedNoCapture = false
+                    val copied = capture.copyLatestFrame(stateFrameBuffer)
+                    if (copied != null &&
+                        SystemClock.elapsedRealtime() - copied.capturedAtMs <= WindowController.FRAME_STALE_TIMEOUT_MS
+                    ) {
+                        stateFrameBuffer = copied.rgbBuffer
+                        lastStateCheckMs = now
+                        if (!loggedFirstFrame) { PylaLog.p(TAG, "state checker received first frame ${copied.width}x${copied.height}"); loggedFirstFrame = true }
+                        val mat = PylaUtils.argbToRgbMat(copied.rgbBuffer, copied.width, copied.height)
+                        val state = StateFinder.getState(mat)
+                        synchronized(stateLock) { latestState = state }
+                        BotStatus.currentState = state
+                        BotStatus.frameCount++
+                        if (state != lastLoggedState) {
+                            PylaLog.p(TAG, "state transition: ${lastLoggedState ?: "<none>"} -> $state")
+                            lastLoggedState = state
+                        }
+                        if (now - lastIdleCheckMs >= idleIntervalMs) {
+                            lastIdleCheckMs = now
+                            try { lobbyAutomator.checkForIdle(mat) } catch (t: Throwable) { PylaLog.w(TAG, "idle check: ${t.message}") }
+                        }
+                        mat.release()
+                        if (now - lastNoDetectionsCheckMs >= noDetectionsCheckIntervalMs) {
+                            lastNoDetectionsCheckMs = now
+                            if (state == "match" && ::play.isInitialized) {
+                                val t = System.currentTimeMillis() / 1000.0
+                                val stale = play.timeSinceDetections.values.any {
+                                    t - it > NO_DETECTIONS_ACTION_THRESHOLD_SEC
+                                }
+                                if (stale) {
+                                    val timeout = NO_DETECTIONS_ACTION_THRESHOLD_SEC.toInt()
+                                    PylaLog.w(TAG, "No detections for ${timeout}s in match, reopening Brawl Stars")
+                                    BotStatus.action("No detections for ${timeout}s, reopening Brawl Stars")
+                                    if (GameLauncher.launch(appContext, gamePackage)) lastGameLaunchMs = now
+                                    for (k in play.timeSinceDetections.keys) play.timeSinceDetections[k] = t
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (t: Throwable) {
+                PylaLog.e(TAG, "state checker exception", t)
+            }
+            try { Thread.sleep(100) } catch (_: InterruptedException) {}
+        }
+    }
+
+
+    private fun gameWatchdog(now: Long) {
+        val fg = com.pyla.ai.input.InputService.foregroundPackage() ?: return
+        if (fg == gamePackage || fg == appContext.packageName) return
+
+        // The PC setting check_if_brawl_stars_crashed is the cadence for this check. If the game is
+        // not foreground at that check, relaunch it immediately instead of applying a second hidden
+        // Android-only delay.
+        PylaLog.w(TAG, "Brawl Stars not in foreground (current=$fg), relaunching")
+        BotStatus.action("Relaunching Brawl Stars (foreground was $fg)")
+        if (GameLauncher.launch(appContext, gamePackage)) lastGameLaunchMs = now
+    }
+
+    private fun mainLoop() {
+        var pickedFirstBrawler = false
+        var firstFrame = true
+        var loggedWaitingForGame = false
+        var seenRealState = false
+        var loggedWaitingForLoad = false
+        while (!stopRequested.get()) {
+            if (paused.get()) {
+                try { Thread.sleep(100) } catch (_: InterruptedException) {}
+                continue
+            }
+            val fg = com.pyla.ai.input.InputService.foregroundPackage()
+            if (fg != null && fg != gamePackage && fg != appContext.packageName) {
+                if (!loggedWaitingForGame) {
+                    PylaLog.p(TAG, "main loop idle: waiting for $gamePackage in foreground (current=$fg)")
+                    BotStatus.action("Waiting for Brawl Stars (foreground: $fg)")
+                    loggedWaitingForGame = true
+                }
+                try { if (::windowController.isInitialized) windowController.releaseMovement() } catch (_: Throwable) {}
+                try { Thread.sleep(250) } catch (_: InterruptedException) {}
+                continue
+            }
+            loggedWaitingForGame = false
+            val iterationStartNs = System.nanoTime()
+            try {
+                val frame = windowController.screenshot()
+                if (firstFrame) {
+                    firstFrame = false; startTimeMs = System.currentTimeMillis()
+                    BotStatus.captureSize = "${frame.width}x${frame.height}"
+                    PylaLog.p(TAG, "main loop first screenshot: ${frame.width}x${frame.height} ratios=(${"%.2f".format(windowController.widthRatio)}, ${"%.2f".format(windowController.heightRatio)}) scale=${"%.2f".format(windowController.scaleFactor)}")
+                }
+
+                val state = latestState
+                if (state == null) { Thread.sleep(50); continue }
+
+                if (!seenRealState) {
+                    if (state == "match") {
+                        if (!loggedWaitingForLoad) {
+                            PylaLog.p(TAG, "Startup: no known screen recognized yet, waiting for the game to load")
+                            BotStatus.action("Waiting for the game to load...")
+                            loggedWaitingForLoad = true
+                        }
+                        Thread.sleep(500)
+                        continue
+                    }
+                    PylaLog.p(TAG, "Startup: first recognized screen is '$state'")
+                    seenRealState = true
+                }
+
+                if (state == "lobby" && !pickedFirstBrawler) {
+                    val first = stageManager.brawlersPickData.firstOrNull()
+                    if (first == null) { PylaLog.w(TAG, "Empty queue -- stopping"); stop(); return }
+                    pickedFirstBrawler = true
+                    stageManager.updateTrophyObserver()
+                    val autoPick = toBool(first["automatically_pick"], false)
+                    PylaLog.p(TAG, "First lobby reached: brawler=${first["brawler"]} automatically_pick=$autoPick")
+                    if (autoPick) {
+                        val nextBrawler = first["brawler"].toString()
+                        PylaLog.p(TAG, "Picking brawler automatically: $nextBrawler")
+                        BotStatus.action("Picking brawler: $nextBrawler")
+                        val result = lobbyAutomator.selectBrawler(nextBrawler)
+                        PylaLog.p(TAG, "Brawler selection result: $result")
+                        if (result != "success") {
+                            PylaLog.w(TAG, "First selection did not complete ($result), continuing with the brawler selected in game")
+                        }
+                    } else {
+                        PylaLog.p(TAG, "Auto-pick is off, using the brawler currently selected in game")
+                    }
+                }
+
+                if (runForMinutes > 0 && !inCooldown) {
+                    val elapsedMin = (System.currentTimeMillis() - startTimeMs) / 60_000.0
+                    if (elapsedMin >= runForMinutes) {
+                        Log.i(TAG, "run_for_minutes reached; entering 3-min cooldown")
+                        inCooldown = true
+                        cooldownStartMs = System.currentTimeMillis()
+                    }
+                }
+                if (inCooldown && System.currentTimeMillis() - cooldownStartMs >= cooldownDurationMs) {
+                    Log.i(TAG, "cooldown over, stopping bot")
+                    stop(); return
+                }
+
+                if (state == "match") {
+                    val brawler = stageManager.brawlersPickData.firstOrNull()?.get("brawler")?.toString()
+                    if (brawler == null) { Thread.sleep(50); continue }
+                    val mat = PylaUtils.frameToMat(frame)
+                    val t0 = System.currentTimeMillis()
+                    try {
+                        play.main(mat, brawler, state) { newState ->
+                            synchronized(stateLock) { latestState = newState }
+                        }
+                    } finally {
+                        mat.release()
+                    }
+                    matchLoopMs += System.currentTimeMillis() - t0
+                    if (++matchLoopSamples >= 50) {
+                        val avg = matchLoopMs / matchLoopSamples
+                        PylaLog.p(TAG, "match loop avg ${avg}ms (~${"%.1f".format(1000.0 / avg.coerceAtLeast(1))} fps)")
+                        matchLoopMs = 0; matchLoopSamples = 0
+                    }
+                } else if (state != "match_making") {
+                    PylaLog.p(TAG, "main loop: dispatching state=$state to StageManager")
+                    stageManager.doState(state)
+                }
+            } catch (t: Throwable) {
+                if (t is IllegalStateException && t.message?.contains("push targets reached") == true) {
+                    PylaLog.p(TAG, "All brawler push targets reached, stopping the bot")
+                    BotStatus.error("All brawler push targets reached, bot stopped")
+                    stop()
+                    return
+                }
+                PylaLog.e(TAG, "main loop error: ${t.message}", t)
+                try { Thread.sleep(50) } catch (_: InterruptedException) {}
+            }
+            throttleMainLoop(iterationStartNs)
+        }
+    }
+
+    private fun throttleMainLoop(iterationStartNs: Long) {
+        val nowMs = SystemClock.elapsedRealtime()
+        if (nowMs - lastThermalCheckMs >= 2_000L) {
+            lastThermalCheckMs = nowMs
+            thermalMaxIps = DeviceProfile.thermallySafeIps(effectiveMaxIps, powerManager)
+            if (thermalMaxIps != lastThermalLoggedLimit) {
+                if (lastThermalLoggedLimit >= 0 && thermalMaxIps < effectiveMaxIps) {
+                    PylaLog.w(TAG, "Performance limited to $thermalMaxIps IPS due to heat or power saver")
+                }
+                lastThermalLoggedLimit = thermalMaxIps
+            }
+        }
+        val targetNs = 1_000_000_000L / thermalMaxIps.coerceAtLeast(1)
+        val remainingNs = targetNs - (System.nanoTime() - iterationStartNs)
+        if (remainingNs <= 0L) return
+        try {
+            val millis = remainingNs / 1_000_000L
+            val nanos = (remainingNs % 1_000_000L).toInt()
+            Thread.sleep(millis, nanos)
+        } catch (_: InterruptedException) {}
+    }
+
+    /** Applies general_config.play_order exactly like PC apply_play_order(). */
+    private fun applyConfiguredPlayOrder() {
+        val order = PylaConfig.load("cfg/general_config.toml")
+            .getString("play_order", "in_order").trim().lowercase()
+        when (order) {
+            "lowest_to_highest" -> queueData.sortBy { toInt(it["trophies"], 0) }
+            "highest_to_lowest" -> queueData.sortByDescending { toInt(it["trophies"], 0) }
+            else -> return
+        }
+        queueData.forEach { it["automatically_pick"] = true }
+        BotStatus.queueSummary = queueData.joinToString(", ") { it["brawler"].toString() }
+    }
+
+    private fun toInt(x: Any?, default: Int = 0): Int = when (x) {
+        is Number -> x.toInt()
+        is String -> x.toIntOrNull() ?: default
+        else -> default
+    }
+
+    private fun toBool(x: Any?, default: Boolean = false): Boolean = when (x) {
+        is Boolean -> x
+        is String -> x.trim().lowercase() in setOf("1", "true", "yes", "on")
+        is Number -> x.toInt() != 0
+        null -> default
+        else -> default
+    }
+}

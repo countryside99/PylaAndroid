@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PylaAI</string>
+    <string name="accessibility_description">PylaAI gesture input. Required for the bot to dispatch virtual touches (joystick, attack, super, gadget) into Brawl Stars. PylaAI never reads your screen content through this service.</string>
+    <string name="capture_notification_title">PylaAI is running</string>
+    <string name="capture_notification_text">Capturing screen for bot vision. Stop from the app to exit.</string>
+    <string name="capture_channel">PylaAI Capture</string>
+    <string name="capture_stop_action">Stop bot</string>
+    <string name="overlay_title">Pyla controls</string>
+    <string name="overlay_enabled">Floating control overlay</string>
+    <string name="overlay_description">Show compact controls over Brawl Stars. Optional and only active when enabled.</string>
+    <string name="overlay_permission_required">Overlay permission is required to show controls over other apps.</string>
+    <string name="overlay_grant_permission">Grant overlay permission</string>
+</resources>
