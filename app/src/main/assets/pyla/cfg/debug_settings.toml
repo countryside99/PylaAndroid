@@ -1,0 +1,7 @@
+verbose_debug = false
+state_finder_debug = false
+re_apply_movement = false
+debug_view = false
+debug_view_fps = 15
+advanced_debug_visuals = false
+record_debug_preview_clips = false

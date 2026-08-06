@@ -156,19 +156,12 @@ class InputService : AccessibilityService() {
 
     fun pressAndRelease(x: Float, y: Float, holdMs: Long) {
         handler.post {
-            pressSeq++
-            val seq = pressSeq
-            if (!attackCh.wantDown) { attackCh.downX = x; attackCh.downY = y }
-            attackCh.wantDown = true
-            attackCh.targetX = x
-            attackCh.targetY = y
+            // Normal combat presses are discrete PC-style taps. Keeping them on the
+            // continuous attack channel caused repeated attack() calls to cancel each
+            // other's release and turn into one long hold, which is not equivalent to
+            // the PC click/touch_down/touch_up sequence.
+            enqueueStroke(Pending(x, y, x, y, holdMs.coerceIn(1, 10_000)))
             pump()
-            handler.postDelayed({
-                if (pressSeq == seq && attackCh.wantDown) {
-                    attackCh.wantDown = false
-                    pump()
-                }
-            }, holdMs.coerceAtLeast(MOVE_DURATION_MS + 20))
         }
     }
 

@@ -21,6 +21,7 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.PI
+import kotlin.math.round
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
@@ -267,11 +268,16 @@ class Play(
     fun useGadget() { Log.i(TAG, "Using gadget"); windowController.press("gadget"); timeSinceGadgetChecked = nowSec(); isGadgetReady = false }
     fun useHypercharge() { Log.i(TAG, "Using hypercharge"); windowController.press("hypercharge"); timeSinceHyperchargeChecked = nowSec(); isHyperchargeReady = false }
 
-    fun isPathBlocked(playerBox: FloatArray?, moveDirection: Any?, walls: List<FloatArray>): Boolean {
+    fun isPathBlocked(
+        playerBox: FloatArray?,
+        moveDirection: Any?,
+        walls: List<FloatArray>,
+        distanceOverride: Double? = null,
+    ): Boolean {
         val m = movementToVector(moveDirection) ?: return false
         val mag = hypot(m.first, m.second)
         if (mag < 1) return false
-        val distance = tileSize * windowController.scaleFactor
+        val distance = distanceOverride ?: tileSize * windowController.scaleFactor
         val dx = m.first / mag * distance; val dy = m.second / mag * distance
         val (center, radius) = getPlayerHitCircle(playerBox)
         if (center.first == 0.0 && center.second == 0.0 && playerBox == null) return false
@@ -332,7 +338,9 @@ class Play(
         val mag = hypot(m.first, m.second)
         if (mag < 1) return null
         val angle = atan2(m.second, m.first)
-        return (angle / (PI / 8)).toInt() and 15
+        // Python uses round(angle / (pi / 8)) % 16. Truncation changes the unstuck
+        // direction too early and makes movement corrections noticeably less stable.
+        return round(angle / (PI / 8)).toInt() and 15
     }
 
     fun unstuckMovementIfNeeded(movement: Pair<Double, Double>, currentTime: Double = nowSec()): Pair<Double, Double> {
@@ -820,7 +828,11 @@ class Play(
         ctx["debug"] = verboseDebug
         ctx["seconds_to_hold_attack_after_reaching_max"] = secondsToHoldAttackAfterReachingMax
         ctx["persistent_data"] = persistentDataPy
-        ctx["last_movement"] = lastMovement?.let { if (it is Pair<*, *>) pyToPair(pairAsPy(it)) ?: PyNone else PyNone } ?: PyNone
+        ctx["last_movement"] = when (val previous = lastMovement) {
+            is Pair<*, *> -> pairAsPy(previous)
+            is String -> previous
+            else -> PyNone
+        }
         ctx["last_movement_change_time"] = lastMovementChangeTime
 
         ctx["get_entity_pos"] = NativeFn("get_entity_pos") { a, _ -> pairToPy(getEntityPos(pyToBox(a[0]))) }
@@ -882,7 +894,8 @@ class Play(
             val box = pyToBox(a.getOrNull(0))
             val move = pyToPair(a.getOrNull(1))
             val walls = pyToBoxes(a.getOrNull(2))
-            isPathBlocked(box, move, walls)
+            val distance = a.getOrNull(3)?.let { Py.toDouble(it) }
+            isPathBlocked(box, move, walls, distance)
         }
         ctx["is_enemy_hittable"] = NativeFn("is_enemy_hittable") { a, _ ->
             val pp = pyToPair(a.getOrNull(0)) ?: (0.0 to 0.0)

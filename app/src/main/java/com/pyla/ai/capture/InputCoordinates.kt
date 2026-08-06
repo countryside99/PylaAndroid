@@ -1,5 +1,7 @@
 package com.pyla.ai.capture
 
+import com.pyla.ai.config.PylaConfig
+
 object InputCoordinates {
 
     private const val BASE_W = 1920
@@ -10,7 +12,8 @@ object InputCoordinates {
     private data class Spot(val x: Int, val y: Int, val anchor: Anchor)
 
     private val pressSpots: Map<String, Spot> = mapOf(
-        "hypercharge" to Spot(1400, 990, Anchor.RIGHT),
+        // Keep these coordinates aligned with cfg/buttons_config.toml and the PC port.
+        "hypercharge" to Spot(1400, 900, Anchor.RIGHT),
         "gadget" to Spot(1640, 990, Anchor.RIGHT),
         "attack" to Spot(1725, 800, Anchor.RIGHT),
         "proceed" to Spot(1660, 980, Anchor.RIGHT),
@@ -55,7 +58,15 @@ object InputCoordinates {
     fun mapY(baseY: Int): Int = (baseY * heightRatio).toInt()
 
     fun press(key: String): Pair<Int, Int> {
-        val spot = pressSpots[key] ?: return (-1 to -1)
+        val fallback = pressSpots[key] ?: return (-1 to -1)
+        // The PC port reads button locations from buttons_config.toml. Keep the same
+        // source of truth on Android while retaining Android's aspect-ratio anchors.
+        val spot = try {
+            val configured = PylaConfig.load("cfg/buttons_config.toml").getIntArray(key)
+            if (configured.size >= 2) Spot(configured[0], configured[1], fallback.anchor) else fallback
+        } catch (_: Throwable) {
+            fallback
+        }
         return mapX(spot.x, spot.anchor) to mapY(spot.y)
     }
 
