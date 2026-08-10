@@ -37,19 +37,19 @@ Settings → Apps → PylaAndroid → ⋮ (Top-right menu) → Allow Restricted 
 
 
 ### 3. Grant Screen Capture (MediaProjection) Permission
-1. Press **Start Bot**.
+1. Press **Start Bot**. (If you like it next to the start button there is an **overlay button** where you can activate a floating overlay to control the bot) 
 2. Android will display a **Screen Capture** permission dialog.
 3. Tap **Start Now** (or **Allow**, depending on your Android version).
 4. If prompted, choose **Entire Screen**.
 
 > **Note:** This permission is required for the bot to analyze the screen. No screenshots or recordings are stored or uploaded.
 
-### 4. Start the Bot
-Once all permissions have been granted:
+### 4. Enjoy external auto-farming
+Once pressed **Start Bot**:
 
-- Press **Start Bot**.
 - **Brawl Stars** will launch automatically.
-- Enjoy fully external auto-farming on your Android device.
+- **Enjoy!**
+
 # Can I use on Emulator?
 Yes! You can use **PylaAndroid's APK** also directly on your android **emulator**!
 # Credits
