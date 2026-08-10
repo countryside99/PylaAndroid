@@ -1,0 +1,344 @@
+{"name": "Slarckvul RUSH mode - Aggressive", "description": "Feita para Obliterar, Boa pra brawlers com muito dano e com time to kill rapido", "brawlers": ["all"], "gamemodes": ["all"], "author": "Slarck-Steam", "date": "2026-05-11"}
+
+# ═══════════════════════════════════════════════════════
+#  SETUP
+# ═══════════════════════════════════════════════════════
+
+_brawler_name = brawler or current_brawler
+brawler_info = brawlers_info.get(_brawler_name)
+
+if not brawler_info:
+    raise ValueError(f"Brawler '{_brawler_name}' not found in brawlers_info.")
+
+persistent_data.setdefault("time_since_holding_attack", None)
+persistent_data.setdefault("last_gadget_use", 0.0)
+
+must_hold = must_brawler_hold_attack(_brawler_name, brawlers_info)
+
+safe_range, attack_range, super_range = get_brawler_range(_brawler_name)
+player_pos = get_entity_pos(player_data)
+
+movement = (0, 0)
+
+
+# ═══════════════════════════════════════════════════════
+#  VECTOR / MOVEMENT HELPERS
+# ═══════════════════════════════════════════════════════
+
+def vec_len(x, y):
+    return math.sqrt(x * x + y * y)
+
+def normalize_move(x, y, radius=JOYSTICK_RADIUS):
+    length = vec_len(x, y)
+    if length <= 0:
+        return (0, 0)
+    scale = radius / length
+    return (x * scale, y * scale)
+
+def is_blocked(move):
+    return is_path_blocked(player_data, move, walls)
+
+def first_unblocked(moves, fallback=None):
+    for move in moves:
+        if not is_blocked(move):
+            return move
+    if fallback is not None:
+        return fallback
+    if moves:
+        return moves[0]
+    return (0, 0)
+
+def move_toward(target_pos):
+    dx = target_pos[0] - player_pos[0]
+    dy = target_pos[1] - player_pos[1]
+    full = normalize_move(dx, dy)
+    x_only = normalize_move(dx, 0)
+    y_only = normalize_move(0, dy)
+    return first_unblocked([full, x_only, y_only], full)
+
+def move_away_from(target_pos):
+    dx = player_pos[0] - target_pos[0]
+    dy = player_pos[1] - target_pos[1]
+    full = normalize_move(dx, dy)
+    x_only = normalize_move(dx, 0)
+    y_only = normalize_move(0, dy)
+    return first_unblocked([full, x_only, y_only], full)
+
+def strafe_around(target_pos):
+    dx = target_pos[0] - player_pos[0]
+    dy = target_pos[1] - player_pos[1]
+    side = 1 if int(time.time() / 2) % 2 == 0 else -1
+    sx = -dy * side
+    sy = dx * side
+    full = normalize_move(sx, sy)
+    reverse = normalize_move(-sx, -sy)
+    return first_unblocked([full, reverse], full)
+
+def random_safe_movement():
+    options = [
+        (0, -JOYSTICK_RADIUS),
+        (0, JOYSTICK_RADIUS),
+        (-JOYSTICK_RADIUS, 0),
+        (JOYSTICK_RADIUS, 0),
+        normalize_move(JOYSTICK_RADIUS, -JOYSTICK_RADIUS),
+        normalize_move(-JOYSTICK_RADIUS, -JOYSTICK_RADIUS),
+        normalize_move(JOYSTICK_RADIUS, JOYSTICK_RADIUS),
+        normalize_move(-JOYSTICK_RADIUS, JOYSTICK_RADIUS),
+    ]
+    random.shuffle(options)
+    return first_unblocked(options, get_random_movement())
+
+
+# ═══════════════════════════════════════════════════════
+#  ARCHETYPE DETECTION
+# ═══════════════════════════════════════════════════════
+
+def detect_archetype():
+    ar = float(brawler_info.get("attack_range", attack_range or 400))
+    sr = float(brawler_info.get("safe_range", safe_range or 200))
+    wall_ignore = brawler_info.get("ignore_walls_for_attacks", False)
+
+    if wall_ignore:
+        return "LOBS"
+    if ar <= 256:
+        return "ASSASSIN"
+    if sr == 0.0 and ar <= 350:
+        return "TANK"
+    if ar >= 600:
+        return "SNIPER"
+    return "RANGED"
+
+archetype = detect_archetype()
+
+
+# ═══════════════════════════════════════════════════════
+#  ATTACK HELPERS
+# ═══════════════════════════════════════════════════════
+
+def do_attack():
+    if not must_hold:
+        attack()
+        return
+
+    hold_attack_time = float(brawler_info.get("hold_attack", 0.0))
+
+    if persistent_data["time_since_holding_attack"] is None:
+        persistent_data["time_since_holding_attack"] = time.time()
+        attack(touch_up=False, touch_down=True)
+
+    elif time.time() - persistent_data["time_since_holding_attack"] >= hold_attack_time:
+        attack(touch_up=True, touch_down=False)
+        persistent_data["time_since_holding_attack"] = None
+
+def try_use_super(enemy_coords, enemy_distance):
+    if not is_super_ready:
+        return
+
+    if persistent_data["time_since_holding_attack"] is not None:
+        return
+
+    super_type = brawler_info.get("super_type", "damage")
+    enemy_hittable = is_enemy_hittable(player_pos, enemy_coords, walls, "super")
+
+    should_super = (
+        enemy_hittable and (
+            enemy_distance <= super_range
+            or super_type in ["spawnable", "other"]
+            or (
+                _brawler_name in ["stu", "surge"]
+                and super_type == "charge"
+                and enemy_distance <= super_range + attack_range
+            )
+        )
+    )
+
+    if should_super:
+        if is_hypercharge_ready:
+            use_hypercharge()
+        use_super()
+
+def try_attack(enemy_coords, enemy_distance, allow_wall_attack=False):
+    if enemy_distance > attack_range:
+        return False
+
+    enemy_hittable = is_enemy_hittable(player_pos, enemy_coords, walls, "attack")
+
+    if enemy_hittable or allow_wall_attack:
+        if is_gadget_ready and persistent_data["time_since_holding_attack"] is None:
+            if time.time() - persistent_data["last_gadget_use"] > 3.0:
+                use_gadget()
+                persistent_data["last_gadget_use"] = time.time()
+
+        do_attack()
+        return True
+
+    return False
+
+
+# ═══════════════════════════════════════════════════════
+#  HOLD ATTACK AUTO-RELEASE
+# ═══════════════════════════════════════════════════════
+
+if must_hold and persistent_data["time_since_holding_attack"] is not None:
+    hold_limit = float(brawler_info.get("hold_attack", 0.0)) + seconds_to_hold_attack_after_reaching_max
+    if time.time() - persistent_data["time_since_holding_attack"] >= hold_limit:
+        attack(touch_up=True, touch_down=False)
+        persistent_data["time_since_holding_attack"] = None
+
+
+# ═══════════════════════════════════════════════════════
+#  POISON GAS
+# ═══════════════════════════════════════════════════════
+
+def avoid_poison_gas():
+    poison_gas = is_there_poison_gas(player_data)
+    x = 0
+    y = 0
+
+    if poison_gas["up"] or poison_gas["down"]:
+        if poison_gas["up"] > poison_gas["down"]:
+            y = JOYSTICK_RADIUS
+        else:
+            y = -JOYSTICK_RADIUS
+
+    if poison_gas["left"] or poison_gas["right"]:
+        if poison_gas["left"] > poison_gas["right"]:
+            x = JOYSTICK_RADIUS
+        else:
+            x = -JOYSTICK_RADIUS
+
+    if x == 0 and y == 0:
+        return None
+
+    move = normalize_move(x, y)
+    return first_unblocked([move, (x, 0), (0, y)], move)
+
+
+# ═══════════════════════════════════════════════════════
+#  NO ENEMY / EXPLORATION
+# ═══════════════════════════════════════════════════════
+
+def no_enemy_movement():
+    closest_teammate_coords, teammate_distance = find_closest_teammate(
+        teammate_data, player_pos, walls
+    )
+
+    if closest_teammate_coords is not None:
+        if teammate_distance is None or teammate_distance > TILE_SIZE * 3:
+            return move_toward(closest_teammate_coords)
+
+    forward = (0, -JOYSTICK_RADIUS)
+    if not is_blocked(forward):
+        return forward
+
+    return random_safe_movement()
+
+
+# ═══════════════════════════════════════════════════════
+#  MAIN BEHAVIOR TREE 
+# ═══════════════════════════════════════════════════════
+
+enemy_coords = None
+enemy_distance = None
+
+# 1. Detectar ameaças e alvos
+if is_there_enemy(enemy_data):
+    enemy_coords, enemy_distance = find_closest_enemy(
+        enemy_data, player_pos, walls, "attack"
+    )
+
+anti_gas_movement = avoid_poison_gas()
+
+# 2. Reação de Fuga do Gás
+if anti_gas_movement is not None:
+    movement = anti_gas_movement
+    
+    # Continua atirando mesmo fugindo do gás se houver inimigos
+    if enemy_coords is not None:
+        try_use_super(enemy_coords, enemy_distance)
+        if archetype == "LOBS":
+            try_attack(enemy_coords, enemy_distance, allow_wall_attack=True)
+        else:
+            try_attack(enemy_coords, enemy_distance)
+
+# 3. Árvore de Combate Padrão
+else:
+    if enemy_coords is None:
+        movement = no_enemy_movement()
+    else:
+        try_use_super(enemy_coords, enemy_distance)
+        
+        # Ataca SEMPRE que estiver em alcance e com visão, independente do movimento
+        if archetype == "LOBS":
+            try_attack(enemy_coords, enemy_distance, allow_wall_attack=True)
+        else:
+            try_attack(enemy_coords, enemy_distance)
+
+        # ═══════════════════════════════════════════════
+        #  MOVIMENTAÇÃO POR ARQUÉTIPO (Sem travar ataque)
+        # ═══════════════════════════════════════════════
+        if archetype == "ASSASSIN":
+            if enemy_distance > attack_range * 0.40:
+                movement = move_toward(enemy_coords)
+            else:
+                movement = strafe_around(enemy_coords)
+
+        elif archetype == "TANK":
+            if enemy_distance > attack_range * 0.25:
+                movement = move_toward(enemy_coords)
+            else:
+                movement = strafe_around(enemy_coords)
+
+        elif archetype == "SNIPER":
+            min_safe = attack_range * 0.35
+            ideal_far = attack_range * 0.75
+
+            if enemy_distance < min_safe:
+                movement = move_away_from(enemy_coords)
+            elif enemy_distance <= ideal_far:
+                movement = strafe_around(enemy_coords)
+            else:
+                movement = move_toward(enemy_coords)
+
+        elif archetype == "LOBS":
+            ideal_dist = attack_range * 0.55
+
+            if enemy_distance < attack_range * 0.45:
+                movement = move_away_from(enemy_coords)
+            elif enemy_distance > ideal_dist:
+                movement = move_toward(enemy_coords)
+            else:
+                movement = strafe_around(enemy_coords)
+
+        else: # RANGED
+            min_safe = max(safe_range * 0.50, attack_range * 0.30)
+            ideal_far = attack_range * 0.60
+
+            if enemy_distance < min_safe:
+                movement = move_away_from(enemy_coords)
+            elif enemy_distance <= ideal_far:
+                movement = strafe_around(enemy_coords)
+            else:
+                movement = move_toward(enemy_coords)
+
+        # Tratamento contra paredes quando em combate
+        if is_blocked(movement):
+            if enemy_distance < safe_range:
+                movement = first_unblocked(
+                    [move_away_from(enemy_coords), strafe_around(enemy_coords), random_safe_movement()], movement
+                )
+            else:
+                movement = first_unblocked(
+                    [move_toward(enemy_coords), strafe_around(enemy_coords), random_safe_movement()], movement
+                )
+
+
+# ═══════════════════════════════════════════════════════
+#  FINAL SAFETY
+# ═══════════════════════════════════════════════════════
+
+if movement is None:
+    movement = (0, 0)
+
+if is_path_blocked(player_data, movement, walls):
+    movement = random_safe_movement()

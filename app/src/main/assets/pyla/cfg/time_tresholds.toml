@@ -1,0 +1,9 @@
+state_check = 3.0
+no_detections = 30
+idle = 3.0
+gadget = 0.1
+hypercharge = 0.1
+super = 0.1
+wall_detection = 0.1
+no_detection_proceed = 8.0
+check_if_brawl_stars_crashed = 5
