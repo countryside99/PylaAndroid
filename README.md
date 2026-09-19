@@ -1,3 +1,6 @@
+
+<img src="ic_launcher_logo.png" width="150" height="150">
+
 # PylaAndroid
 PylaAndroid is a simple and easy to use without root or ADB needed PylaAI port on-device.
 # Information
