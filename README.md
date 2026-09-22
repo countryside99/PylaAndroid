@@ -3,10 +3,15 @@
 
 # PylaAndroid
 PylaAndroid is a simple and easy to use without root or ADB needed PylaAI port on-device.
+
+# Important Notice ⚠️
+**As for now, I don't have much time to continue developing PylaAndroid. I hope someone can fork the project and continue it, as long as it remains fully open-source.
+Every contribution is welcome, feel free to fork the project, add features I haven't had time to implement, fix bugs, or help mantain the project.**
+**Also, if you are a new developer that is new to this world, you can be the one who can fork this and start your journey**
+
 # Information
 Every PylaAI's file such as play.py, trophy_observer.py is fully rewritten in Kotlin as play.kt, trophy_observer.kt and the others.
 ## How to use
-
 Follow these steps to start using **PylaAI** on your Android device.
 
 ### 1. Install the App
