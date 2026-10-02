@@ -1,4 +1,6 @@
 
+ ## Ongoing project engine refactoring, please wait, closed beta builds will become available soon...
+
 <img src="ic_launcher_logo.png" width="150" height="150">
 
 # PylaAndroid
