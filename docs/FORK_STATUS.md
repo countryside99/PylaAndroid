@@ -12,9 +12,7 @@ Everything here is early beta. Treat every run as supervised. The project does n
 ## License and attribution
 
 - Original attribution and the upstream project link are preserved.
-- The project is now licensed under the **GNU General Public License v3.0** — see [LICENSE](../LICENSE).
-- This relicensing covers the project's own source only. It does **not** relicense third-party game artwork or any asset whose rights belong to others.
-- The [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) license applied to earlier snapshots of this fork's source baseline only. Any statement that CC BY-NC 4.0 still governs the current project is stale.
+- The project is licensed under the **CC BY-NC 4.0** [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)
 
 ## What works today
 
