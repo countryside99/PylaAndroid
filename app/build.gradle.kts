@@ -30,8 +30,8 @@ android {
         applicationId = "com.pyla.ai"
         minSdk = 26
         targetSdk = 34
-        versionCode = 30
-        versionName = "3.0.10-calibration-test"
+        versionCode = 40000
+        versionName = "4.0.0"
         buildConfigField("String", "DIAGNOSTIC_URL", "\"https://pyla-logs.fetzi-ai.de/v1/reports\"")
         val uploadCapability = providers.environmentVariable("PYLA_DIAGNOSTIC_UPLOAD_TOKEN").orElse("").get()
         require(uploadCapability.isEmpty() || uploadCapability.matches(Regex("[A-Za-z0-9_-]{32,128}")))
