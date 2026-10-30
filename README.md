@@ -50,6 +50,16 @@ Once pressed **Start Bot**:
 - **Brawl Stars** will launch automatically.
 - **Enjoy!**
 
+# Playstyle builder
+
+The optional [playstyle builder](tools/playstyle-builder/) generates a custom `.pyla` playstyle in
+your browser. Open `tools/playstyle-builder/index.html`, pick a preset, tune it and download the
+file — no server, account or upload involved. Import it in PylaAndroid via **Playstyles → Import
+custom .pyla**, then select the playstyle and check the logs after starting. The builder only
+creates the script; detections, brawler data and native input gates stay authoritative, and import
+success is not proof of gameplay behaviour. See the
+[builder README](tools/playstyle-builder/README.md) for limits and the included checks.
+
 # Can I use on Emulator?
 Yes! You can use **PylaAndroid's APK** also directly on your android **emulator**!
 

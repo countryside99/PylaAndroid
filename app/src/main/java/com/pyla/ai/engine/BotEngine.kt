@@ -341,20 +341,12 @@ class BotEngine(
             .toLong().coerceAtLeast(10L)
 
         val selectedPlaystyle = PlaystyleSelection.effectivePlaystyle()
-        var pylaScript = PlaystyleRegistry.load(selectedPlaystyle)
-        if (pylaScript == null && selectedPlaystyle != PlaystyleRegistry.DEFAULT_PLAYSTYLE) {
+        val pylaScript = PlaystyleRegistry.load(selectedPlaystyle)
+        if (pylaScript == null) {
             DiagnosticLog.failure("engine", "playstyle", "requested_unavailable")
-            PylaLog.w(TAG, "Playstyle '$selectedPlaystyle' failed to load, falling back to default")
-            pylaScript = PlaystyleRegistry.load(PlaystyleRegistry.DEFAULT_PLAYSTYLE)
-        }
-        if (pylaScript == null) {
-            pylaScript = PlaystyleRegistry.listMeta().firstOrNull()?.let { PlaystyleRegistry.load(it.filename) }
-        }
-        if (pylaScript == null) {
-            DiagnosticLog.failure("engine", "playstyle", "unavailable")
-            BotStatus.error("No playstyle (.pyla) could be loaded")
-            PylaLog.e(TAG, "No .pyla playstyle available; aborting start")
-            stop("no_playstyle")
+            BotStatus.error("Selected playstyle could not be loaded. Import a compatible .pyla file.")
+            PylaLog.e(TAG, "Selected playstyle failed to compile or could not be read; aborting start")
+            stop("selected_playstyle_unavailable")
             return
         }
         DiagnosticLog.event(
@@ -363,7 +355,7 @@ class BotEngine(
                 "gamemodes=${pylaScript.meta.gamemodes} fallback=${selectedPlaystyle != pylaScript.meta.filename}",
         )
         PylaLog.p(TAG, "Selected playstyle: ${pylaScript.meta.displayName} (gamemodes=${pylaScript.meta.gamemodes})")
-        // Actual loaded metadata (a failed requested style falls back), never the requested name.
+        // Display exactly the script admitted above; an invalid selection aborts startup.
         runCatching { HudTelemetry.recordPlaystyle(HudTelemetry.generation(), pylaScript.meta.displayName) }
 
         applyConfiguredPlayOrder()

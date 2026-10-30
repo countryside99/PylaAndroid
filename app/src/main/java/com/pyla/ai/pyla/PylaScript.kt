@@ -230,23 +230,28 @@ object PlaystyleRegistry {
         }
     }
 
-    /** Imports raw .pyla content under the given filename. Returns the stored filename or null. */
-    fun importContent(originalName: String, content: String): String? {
-        return try {
-            // Validate that it compiles before saving.
-            PylaScript.parseContent(originalName, content)
-            var name = sanitizeName(originalName)
-            if (!name.endsWith(".pyla")) name += ".pyla"
-            val out = File(playstylesDir(), name)
-            out.writeText(content)
-            Log.i(TAG, "imported playstyle")
-            name
-        } catch (t: Throwable) {
-            DiagnosticLog.failure("playstyle", "registry_import", "import_failed", t)
-            Log.w(TAG, "playstyle import failed", t)
-            null
+    /** The document importer owns/closes its bounded input and never overwrites an existing style. */
+    fun importDocument(originalName: String, input: java.io.InputStream?): PlaystyleImportResult {
+        val directory = try {
+            playstylesDir()
+        } catch (_: Exception) {
+            try { input?.close() } catch (_: Exception) { }
+            return PlaystyleImportResult.Failure(PlaystyleImportFailure.WRITE_FAILED)
+        }
+        return PlaystyleImporter.importFrom(input, originalName, directory) { filename, content ->
+            PylaScript.parseContent(filename, content)
         }
     }
+
+    /** Compatibility entry point for callers that already have UTF-8 text. */
+    fun importContent(originalName: String, content: String): String? =
+        when (val result = importDocument(originalName, content.byteInputStream(Charsets.UTF_8))) {
+            is PlaystyleImportResult.Success -> result.filename
+            is PlaystyleImportResult.Failure -> {
+                DiagnosticLog.failure("playstyle", "registry_import", "import_${result.reason.name.lowercase(java.util.Locale.ROOT)}")
+                null
+            }
+        }
 
     fun delete(filename: String): Boolean {
         val f = File(playstylesDir(), filename)

@@ -1,0 +1,84 @@
+{"name":"My Android Playstyle","description":"Android v4.0.0 builder 1.0; distance 85% of attack range; explore when no target; strafe on.","brawlers":["all"],"gamemodes":["all"],"author":"Custom"}
+# Generated for PylaAndroid v4.0.0. Not a PC-only playstyle.
+# Vectors are reference-space; detection coordinates are capture-space.
+# Local wall checks only: no A*, world coordinates, HP logic or aim gestures.
+# A failed movement search returns (0, 0), never a blocked fallback.
+
+def reference_move(dx, dy):
+    return normalize_move(dx / width_ratio, dy / height_ratio)
+
+def gas_clear(move, gas):
+    if move[0] < -0.01 and gas.get("left", 0) > 0:
+        return False
+    if move[0] > 0.01 and gas.get("right", 0) > 0:
+        return False
+    if move[1] < -0.01 and gas.get("up", 0) > 0:
+        return False
+    if move[1] > 0.01 and gas.get("down", 0) > 0:
+        return False
+    return True
+
+def checked_move(wanted, gas):
+    if abs(wanted[0]) + abs(wanted[1]) < 0.01:
+        return (0, 0)
+    for angle in [0, 0.7853981634, -0.7853981634, 1.5707963268, -1.5707963268, 2.3561944902, -2.3561944902, 3.1415926536]:
+        candidate = rotate_movement(wanted, angle)
+        # Wall geometry is capture-space, unlike the movement output.
+        capture_candidate = (candidate[0] * width_ratio, candidate[1] * height_ratio)
+        if gas_clear(candidate, gas) and not is_path_blocked(player_data, capture_candidate, walls):
+            return candidate
+    return (0, 0)
+
+now = time_now()
+player = get_entity_pos(player_data)
+enemy, distance = find_closest_enemy(enemy_data, player, walls, "attack")
+ally, ally_distance = find_closest_teammate(teammate_data, player)
+safe_range, attack_range, super_range = get_brawler_range(brawler)
+wanted = (0, 0)
+gas = is_there_poison_gas(player_data)
+gas_x = gas.get("left", 0) - gas.get("right", 0)
+gas_y = gas.get("up", 0) - gas.get("down", 0)
+gas_near = gas.get("left", 0) + gas.get("right", 0) + gas.get("up", 0) + gas.get("down", 0) > 0
+
+if gas_near:
+    wanted = reference_move(gas_x, gas_y)
+elif enemy is not None and distance is not None:
+    dx = enemy[0] - player[0]
+    dy = enemy[1] - player[1]
+    desired = attack_range * 0.8500
+    margin = attack_range * 0.1200
+    if distance > desired + margin:
+        wanted = reference_move(dx, dy)
+    elif distance < max(0, desired - margin):
+        wanted = reference_move(-dx, -dy)
+    else:
+        direction = 1
+        if int(now / 2.00) % 2 == 1:
+            direction = -1
+        radial = reference_move(dx, dy)
+        wanted = rotate_movement(radial, direction * 1.5707963268)
+else:
+    directions = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)]
+    wander = directions[int(now / 2) % 8]
+    wanted = normalize_move(wander[0], wander[1])
+
+movement = checked_move(wanted, gas)
+
+# Auto-aim requests only; native freshness, geometry and STOP gates stay authoritative.
+can_attack = False
+if enemy is not None and distance is not None:
+    can_attack = distance <= attack_range and is_enemy_hittable(player, enemy, walls, "attack")
+info = brawlers_info.get(brawler, {})
+hold_started = persistent_data.get("time_since_holding_attack")
+needs_hold = must_brawler_hold_attack(brawler)
+hold_duration = max(0.1, (info.get("hold_attack", 0) or 0) + seconds_to_hold_attack_after_reaching_max)
+if hold_started is not None:
+    if not can_attack or not needs_hold or now < hold_started or now - hold_started >= hold_duration:
+        attack(touch_up=True, touch_down=False)
+        persistent_data["time_since_holding_attack"] = None
+elif can_attack:
+    if needs_hold:
+        attack(touch_up=False, touch_down=True)
+        persistent_data["time_since_holding_attack"] = now
+    else:
+        attack()

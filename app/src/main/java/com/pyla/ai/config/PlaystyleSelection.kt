@@ -31,7 +31,13 @@ object PlaystyleSelection {
                 PylaUserSettings.getString(CONFIG_PATH, CONFIG_KEY, null)
 
             override fun writeTomlSelection(value: String) {
+                // Retained installs predate this key while keeping the same asset version.
+                // Seed its shipped default before the normal setter snapshots defaults.
+                PlaystyleSelectionFile.ensureKey(PylaConfig.resolve(CONFIG_PATH), defaultPlaystyle)
                 PylaUserSettings.set(CONFIG_PATH, CONFIG_KEY, value)
+                if (PylaUserSettings.getString(CONFIG_PATH, CONFIG_KEY, null) != value) {
+                    throw java.io.IOException("playstyle_selection_write_failed")
+                }
             }
 
             override fun writeLegacyPreference(value: String) {

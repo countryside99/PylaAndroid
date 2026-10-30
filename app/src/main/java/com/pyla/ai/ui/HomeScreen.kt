@@ -78,11 +78,13 @@ fun HomeScreen(
     val context = LocalContext.current
     var accessibility by remember { mutableStateOf(accessibilityEnabled()) }
     var running by remember { mutableStateOf(BotStatus.engineRunning) }
+    var lastError by remember { mutableStateOf(BotStatus.lastError) }
     var statusTick by remember { mutableStateOf(0) }
 
     LaunchedEffect(Unit) {
         while (true) {
             running = BotStatus.engineRunning
+            lastError = BotStatus.lastError
             accessibility = accessibilityEnabled()
             statusTick++
             delay(400)
@@ -223,9 +225,9 @@ fun HomeScreen(
             KeyValueRow("Capture", BotStatus.captureSize.ifBlank { "not started" })
             KeyValueRow("Frames", "${BotStatus.frameCount}")
             KeyValueRow("Last action", BotStatus.lastAction.ifBlank { "none" }, PylaColors.TextHigh)
-            if (BotStatus.lastError.isNotEmpty()) {
+            if (lastError.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
-                Text(BotStatus.lastError, color = PylaColors.Red, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                Text(lastError, color = PylaColors.Red, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
             }
         }
 

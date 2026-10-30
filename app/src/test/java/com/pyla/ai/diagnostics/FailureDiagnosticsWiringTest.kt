@@ -75,7 +75,7 @@ class FailureDiagnosticsWiringTest {
         assertTrue(e.contains("fun stop(cause: String)"))
         assertTrue(e.contains("DiagnosticLog.terminal(\"engine\", \"stop\", \"requested\", cause)"))
         (listOf(
-            "capture_unavailable", "no_playstyle", "bootstrap_failure", "run_for_minutes",
+            "capture_unavailable", "selected_playstyle_unavailable", "bootstrap_failure", "run_for_minutes",
             "push_targets_reached", "brawler_selection_unverified", "empty_queue",
         )).forEach { assertTrue("missing attributed stop: $it", e.contains("stop(\"$it\")")) }
         assertTrue(e.contains("DiagnosticLog.failure(\"engine\", \"main_loop\", \"unhandled\", t)"))

@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>PylaAndroid — Playstyle Studio</title>
+<style>
+:root{--bg:#10111a;--panel:#191b28;--raised:#202334;--line:#303347;--text:#f1f0fa;--muted:#b0b1c7;--purple:#b5a0ff;--teal:#6de0cf;--orange:#ffba86;--pink:#ff9abc;--radius:20px;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);background:var(--bg);font-size:14px;font-synthesis:none;color-scheme:dark}*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:100px}body{margin:0;background:radial-gradient(ellipse 900px 600px at 8% 0%,#6b42c21c,transparent),radial-gradient(ellipse 600px 700px at 100% 15%,#29b8aa0b,transparent),var(--bg);line-height:1.55}button,input,select,textarea{font:inherit}button,a,input,select,textarea,summary{-webkit-tap-highlight-color:transparent}button,a,input,select,textarea,summary:focus-visible{outline-offset:4px}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--teal)}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.45}a{color:inherit;text-decoration:none}svg{display:block;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}p,h1,h2,h3{margin:0}button{transition:background .15s,border-color .15s,transform .15s}button:not(:disabled):active{transform:translateY(1px)}.shell{max-width:1280px;margin:auto;padding:0 32px}.topbar{border-bottom:1px solid #ffffff0a;background:#10111ae8}.top-inner{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:80px}.brand{display:flex;align-items:center;gap:12px;font-weight:750;letter-spacing:-.5px;font-size:19px}.brand-mark{width:38px;height:38px;background:linear-gradient(145deg,#baa7ff,#8662ed);border-radius:12px;display:grid;place-items:center;color:#171026;box-shadow:0 4px 20px #a389ff1c}.brand-mark svg{width:25px;height:25px;stroke-width:2.2}.brand small{font-size:12px;color:var(--muted);font-weight:450;margin-left:8px;letter-spacing:0}.top-links{display:flex;align-items:center;gap:24px;font-size:12px;color:var(--muted)}.offline{display:inline-flex;align-items:center;gap:8px;border:1px solid #35635b;background:#19332d80;padding:6px 11px;border-radius:99px;color:#9de7da;font-size:11px;font-weight:650;white-space:nowrap}.offline:before{content:"";width:6px;height:6px;border-radius:50%;background:var(--teal)}.hero{padding:52px 0 34px;display:flex;gap:36px;justify-content:space-between;align-items:center}.eyebrow{text-transform:uppercase;letter-spacing:2px;color:var(--purple);font-size:10px;font-weight:750;margin-bottom:12px;display:flex;gap:9px;align-items:center}.eyebrow:before{content:"";width:22px;height:1px;background:var(--purple)}h1{font-size:clamp(32px,4vw,49px);letter-spacing:-2px;line-height:1.13;font-weight:780}h1 span{color:var(--purple)}.hero-copy{max-width:570px;color:var(--muted);font-size:14px;margin-top:16px;line-height:1.8}.hero-meta{display:flex;flex-wrap:wrap;gap:16px;margin-top:22px;color:#c3c2d8;font-size:11px}.hero-meta span{display:flex;align-items:center;gap:6px}.hero-meta svg{width:14px;height:14px;color:var(--teal)}.hero-art{flex:0 0 290px;height:185px;position:relative;display:grid;place-items:center;overflow:hidden}.orbit{position:absolute;border:1px solid #b5a0ff1f;border-radius:50%;width:174px;height:174px;transform:rotate(-20deg) scaleY(.76)}.orbit.two{width:250px;height:250px;transform:rotate(32deg) scaleY(.7);border-style:dashed;border-color:#b5a0ff18}.orbit:after{content:"";position:absolute;right:20px;top:15px;width:9px;height:9px;border-radius:50%;background:var(--teal);box-shadow:0 0 20px #6de0cf55}.art-code{z-index:1;border:1px solid #72608a70;transform:rotate(-7deg);border-radius:20px;width:116px;height:126px;background:linear-gradient(145deg,#34304d,#1c1d2d);box-shadow:0 18px 50px #0005;display:flex;align-items:center;justify-content:center;flex-direction:column;color:var(--purple);gap:8px}.art-code svg{width:43px;height:43px;stroke-width:1.3}.art-code span{font:11px ui-monospace,monospace;letter-spacing:1.5px;color:#d4c8ff}.art-tag{position:absolute;z-index:2;bottom:15px;right:23px;background:#243331;border:1px solid #44645e;border-radius:8px;padding:5px 9px;font:10px ui-monospace,monospace;color:#9ce9db;transform:rotate(4deg)}.workspace-nav{display:flex;gap:25px;border-bottom:1px solid var(--line);margin-bottom:28px;align-items:center}.workspace-nav a{display:flex;align-items:center;gap:8px;padding:12px 0 14px;font-size:12px;font-weight:650;color:var(--muted);border-bottom:2px solid transparent}.workspace-nav a:first-child{border-color:var(--purple);color:var(--text)}.nav-index{font:10px ui-monospace,monospace;color:#a59bc4}.nav-note{margin-left:auto;color:var(--muted);font-size:11px}.layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:24px;align-items:start;padding-bottom:32px}.builder{min-width:0}.card{background:linear-gradient(135deg,#1b1d2b,#181a26);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:20px;overflow:hidden;scroll-margin-top:24px}.card-head{display:flex;align-items:center;gap:13px;padding:23px 25px 20px;border-bottom:1px solid #ffffff07}.section-icon{width:39px;height:39px;border-radius:12px;display:grid;place-items:center;flex-shrink:0;background:#b5a0ff12;color:var(--purple)}.movement .section-icon{color:var(--teal);background:#6de0cf10}.combat .section-icon{color:var(--pink);background:#ff9abc10}.card-head h2{font-size:16px;letter-spacing:-.35px;line-height:1.4}.card-head p{font-size:11px;color:var(--muted);margin-top:3px}.section-number{margin-left:auto;font:11px ui-monospace,monospace;color:#b5accd}.card-body{padding:22px 25px 25px}.group-title{color:#c5bfd9;text-transform:uppercase;letter-spacing:1.3px;font-size:10px;font-weight:700;display:block;margin-bottom:12px}.presets{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-bottom:23px}.preset{background:#12141f;border:1px solid #33364b;color:var(--muted);border-radius:12px;min-height:83px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px;padding:11px 4px;font-size:10px;font-weight:650}.preset svg{width:22px;height:22px}.preset:hover{background:#262338;border-color:#84739f}.preset[aria-pressed=true]{color:#ded3ff;background:#b5a0ff14;border-color:#a78ce6;box-shadow:inset 0 0 0 1px #b5a0ff14}.preset-hint{font-size:12px;color:var(--muted);margin:-6px 0 21px;min-height:20px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.field{display:block;font-size:12px;font-weight:600;min-width:0}.field-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.optional{color:var(--muted);font-weight:400;font-size:10px;margin-left:3px}.input,select{display:block;width:100%;min-width:0;min-height:46px;border:1px solid #373a50;background:#11131f;border-radius:9px;color:var(--text);padding:10px 12px;font-size:12px}select{padding-right:28px}input::placeholder{color:#9699b2}input:hover,select:hover{border-color:#6b607f}input:disabled{opacity:.4;cursor:not-allowed}.hint{display:block;color:var(--muted);font-weight:400;font-size:11px;line-height:1.7;margin-top:7px}.slider-group+.slider-group{margin-top:24px}output{color:#c9b9ff;background:#b5a0ff10;border:1px solid #b5a0ff22;min-width:49px;text-align:center;padding:3px 8px;border-radius:6px;font:11px ui-monospace,monospace;white-space:nowrap}.movement output{color:#9be8d9;background:#6de0cf0b;border-color:#6de0cf20}input[type=range]{accent-color:var(--teal);display:block;width:100%;height:24px;margin:0;cursor:pointer}.scale{display:flex;justify-content:space-between;color:#969ab5;font:9px ui-monospace,monospace;margin-top:2px}.divider{height:1px;background:#ffffff09;margin:23px 0}.check{display:flex;align-items:flex-start;gap:12px;cursor:pointer;position:relative}.check input{appearance:none;flex:0 0 36px;width:36px;height:21px;margin:1px 0 0;border:1px solid #51566e;border-radius:99px;background:#303449;position:relative;cursor:pointer;transition:background .15s}.check input:before{content:"";position:absolute;top:3px;left:3px;width:13px;height:13px;background:#c4c5d5;border-radius:50%;transition:transform .15s}.check input:checked{background:#a58ae9;border-color:#bca8f1}.check input:checked:before{background:#21152f;transform:translateX(15px)}.movement .check input:checked{background:var(--teal);border-color:var(--teal)}.movement .check input:checked:before{background:#15312c}.check-title{display:block;font-size:12px;font-weight:650}.check .hint{margin-top:4px}.nested{margin:19px 0 0 48px}.field-spaced{margin-top:24px}.info{padding:12px 13px;background:#111820;border:1px solid #6de0cf20;border-radius:10px;font-size:11px;color:#a8c9c5;line-height:1.75;margin-top:22px;display:flex;gap:9px;align-items:flex-start}.info svg{width:15px;height:15px;flex-shrink:0;margin-top:2px}.description{color:var(--muted);font-size:12px;line-height:1.8;margin-bottom:22px}.ability-list{display:grid;gap:20px}.warning{background:#2b221b;border-color:#ffba862b;color:#e3bd9e}.tag{display:inline-block;font-size:9px;letter-spacing:.6px;text-transform:uppercase;padding:3px 7px;border-radius:5px;background:#252039;color:#c7b6fb;border:1px solid #c7b6fb22}.sidebar{position:sticky;top:24px;min-width:0}.export-card{border-color:#77618e80;background:radial-gradient(ellipse at 100% 0,#a086ed14,transparent 60%),#1a1b29}.export-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:17px}.export-top .group-title{margin:0;color:var(--purple)}.export-title{font-size:23px;letter-spacing:-.8px;margin-bottom:8px}.export-subtitle{color:var(--muted);font-size:12px;line-height:1.8}.file-box{display:flex;align-items:center;gap:12px;margin:21px 0 15px;padding:14px 12px;border:1px solid #35354a;background:#12131d;border-radius:11px}.file-icon{color:var(--purple);flex-shrink:0}.file-text{min-width:0}.filename{font:11px ui-monospace,monospace;overflow-wrap:anywhere;color:#e4dcf9}.file-meta{font-size:10px;color:var(--muted);margin-top:4px}.summary{font-size:11px;line-height:1.8;color:#c4bfd7;padding:0 1px;min-height:39px}.actions{display:grid;gap:9px;margin-top:20px}.actions button{display:flex;align-items:center;justify-content:center;gap:9px;border-radius:10px;min-height:46px;border:1px solid #454057;background:#222133;color:#e1d8f7;font-size:12px;font-weight:700}.actions button svg{width:17px;height:17px}.actions button:hover{background:#302a43}.actions .primary{background:linear-gradient(115deg,#c4afff,#a78ce9);color:#211433;border-color:transparent;box-shadow:0 4px 18px #ad8ff51a}.actions .primary:hover{background:#d1bcff}.status{font-size:10px;color:#a9d3c8;line-height:1.75;margin-top:14px;min-height:34px}.status.error{color:#ffadbe}.code-details{border-top:1px solid #ffffff0b;margin-top:13px;padding-top:15px}summary{cursor:pointer;font-size:11px;color:#ccc3e0;min-height:28px}textarea{width:100%;max-width:100%;min-height:260px;resize:vertical;border:1px solid #42415b;border-radius:9px;background:#0e1018;color:#d3c9f0;padding:12px;font:10px/1.7 ui-monospace,monospace;margin-top:12px;white-space:pre;overflow:auto}.guide{padding:23px 24px}.guide h2{font-size:13px;margin-bottom:20px}.steps{padding:0;margin:0;list-style:none;display:grid;gap:18px;counter-reset:step}.steps li{counter-increment:step;display:flex;gap:11px;color:var(--muted);font-size:11px;line-height:1.7}.steps li:before{content:counter(step);flex:0 0 23px;height:23px;display:grid;place-items:center;border:1px solid #414056;border-radius:8px;color:var(--purple);font:10px ui-monospace,monospace}.steps strong{font-weight:600;color:#e0dbef}.trust{display:flex;gap:10px;font-size:11px;color:var(--muted);line-height:1.8;padding:0 7px}.trust svg{color:var(--teal);width:18px;height:18px;flex-shrink:0;margin-top:3px}.footer{border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:24px;padding:22px 0 32px;color:#a4a5be;font-size:10px}.footer p{max-width:680px}.footer span{color:#c4b9df;white-space:nowrap}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(min-width:1450px){.hero{padding-top:64px}}
+@media(max-width:1000px){.shell{padding:0 24px}.layout{grid-template-columns:minmax(0,1fr) 320px;gap:18px}.card-body{padding:20px}.card-head{padding:20px}.hero-art{flex-basis:220px}.preset{font-size:9px}.presets{gap:5px}.nested{margin-left:0}.nav-note{display:none}}
+@media(max-width:800px){.layout{grid-template-columns:1fr}.sidebar{position:static;display:grid;grid-template-columns:1fr 1fr;gap:18px}.sidebar .card{margin-bottom:0}.trust{grid-column:1/-1;margin-bottom:10px}.hero-art{flex-basis:190px}.hero{gap:15px;padding-top:35px}.brand small{display:none}.hero-copy{font-size:13px}.top-links>a{display:none}.workspace-nav{gap:20px}.presets{gap:8px}.preset{font-size:11px;min-height:79px}}
+@media(max-width:540px){.shell{padding:0 18px}.top-inner{min-height:68px}.brand{font-size:17px;gap:9px}.brand-mark{width:33px;height:33px;border-radius:10px}.offline{font-size:9px;padding:5px 8px}.hero{padding:31px 0 26px}.hero-art{display:none}h1{font-size:36px;letter-spacing:-1.5px}.hero-copy{font-size:12px;margin-top:12px}.hero-meta{gap:12px;margin-top:17px;font-size:10px}.workspace-nav{gap:19px;margin-bottom:20px}.workspace-nav a{font-size:11px;gap:5px}.nav-index{font-size:9px}.card-head{padding:18px}.card-body{padding:20px 18px}.card{border-radius:16px;margin-bottom:16px}.card-head h2{font-size:15px}.card-head p{font-size:10px}.section-icon{width:35px;height:35px}.presets{gap:6px;grid-template-columns:repeat(3,minmax(0,1fr))}.preset{font-size:11px;min-height:72px}.form-grid{grid-template-columns:1fr;gap:19px}.sidebar{display:block}.sidebar .card{margin-bottom:16px}.guide{padding:22px}.nested{margin-left:0}.footer{flex-direction:column;gap:12px;padding-bottom:28px}.trust{padding:0 4px;margin:4px 0 26px}.tag{font-size:8px}.hero-meta span:last-child{display:none}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before{transition:none!important}}
+@media(forced-colors:active){.check input{appearance:auto;width:24px;height:24px}.check input:before{display:none}.preset[aria-pressed=true]{outline:2px solid Highlight}.actions .primary{border:1px solid ButtonText}.card{border:1px solid CanvasText}}
+</style>
+</head>
+<body>
+<div class="topbar"><div class="shell top-inner"><a class="brand" href="#top" aria-label="PylaAndroid Playstyle Studio"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 19V5h6a5 5 0 0 1 0 10H7M10 8h3a2 2 0 0 1 0 4h-3"/></svg></span>PylaAndroid <small>/ Playstyle Studio</small></a><div class="top-links"><a href="#guide">Quick guide</a><span class="offline">Works offline</span></div></div></div>
+<main id="top" class="shell">
+<section class="hero" aria-labelledby="page-title"><div><div class="eyebrow">Your strategy. Your playstyle.</div><h1 id="page-title">Build your next<br><span>playstyle.</span></h1><p class="hero-copy">Start with a preset. Fine-tune the movement. Export a playstyle built for PylaAndroid — all in your browser.</p><div class="hero-meta"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Android v4 scripting API</span><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Z"/></svg>No uploads or accounts</span><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 7-5 5 5 5m8-10 5 5-5 5m-3-14-2 18"/></svg>Editable .pyla file</span></div></div><div class="hero-art" aria-hidden="true"><div class="orbit"></div><div class="orbit two"></div><div class="art-code"><svg viewBox="0 0 24 24"><path d="m8 7-5 5 5 5m8-10 5 5-5 5m-3-14-2 18"/></svg><span>.pyla</span></div><div class="art-tag">ANDROID API</div></div></section>
+<nav class="workspace-nav" aria-label="Builder sections"><a href="#strategy"><span class="nav-index">01</span> Strategy</a><a href="#movement"><span class="nav-index">02</span> Movement</a><a href="#combat"><span class="nav-index">03</span> Combat</a><a href="#export"><span class="nav-index">04</span> Export</a><span class="nav-note">One file. Endless fine-tuning.</span></nav>
+<div class="layout"><section class="builder" aria-label="Builder settings">
+<section id="strategy" class="card"><div class="card-head"><span class="section-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 2.8 5.7L21 9.6l-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg></span><div><h2>Your strategy</h2><p>A starting point, made your own.</p></div><span class="section-number">01 / 04</span></div><div class="card-body"><span class="group-title" id="preset-label">Choose a starting preset</span><div class="presets" role="group" aria-labelledby="preset-label">
+<button type="button" class="preset" data-preset="balanced" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M4 7h16M5 7l-3 7h6Zm14 0-3 7h6ZM7 21h10"/></svg>Balanced</button>
+<button type="button" class="preset" data-preset="kiter" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v4m0 14v4M1 12h4m14 0h4"/></svg>Kiter</button>
+<button type="button" class="preset" data-preset="rusher" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-9 12h7l-1 8 10-13h-7Z"/></svg>Rusher</button>
+<button type="button" class="preset" data-preset="team" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6m3 10v-3a5 5 0 0 0-2-4"/></svg>Team follower</button>
+<button type="button" class="preset" data-preset="guard" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Zm0 5v8m-4-4h8"/></svg>Guard</button></div>
+<label class="sr-only" for="preset">Starting preset</label><select id="preset" class="sr-only" tabindex="-1"><option value="balanced">Balanced</option><option value="kiter">Kiter</option><option value="rusher">Rusher</option><option value="team">Team follower</option><option value="guard">Guard</option></select><p id="presetDescription" class="preset-hint">A flexible mix of approach, retreat and sideways movement.</p>
+<div class="form-grid"><label class="field" for="name"><span class="field-heading">Playstyle name</span><input class="input" id="name" type="text" maxlength="80" value="My Android Playstyle" autocomplete="off"></label><label class="field" for="author"><span class="field-heading">Author <span class="optional">Optional</span></span><input class="input" id="author" type="text" maxlength="80" placeholder="Your name or alias" autocomplete="off"><span class="hint">Included only in your exported file.</span></label></div></div></section>
+<section id="movement" class="card movement"><div class="card-head"><span class="section-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18m-12-6 3-3 3 3m-6 12 3 3 3-3M6 9l-3 3 3 3m12-6 3 3-3 3"/></svg></span><div><h2>Movement & positioning</h2><p>Set the distance. Find your rhythm.</p></div><span class="section-number">02 / 04</span></div><div class="card-body">
+<div class="slider-group"><label class="field" for="range"><span class="field-heading"><span>Preferred enemy distance</span><output id="rangeValue" for="range">85%</output></span><input id="range" type="range" min="20" max="110" step="1" value="85"><span class="scale" aria-hidden="true"><span>20% · Close</span><span>110% · Far</span></span><span class="hint">Relative to your brawler's attack range. Above 100% may keep attacks out of range.</span></label></div>
+<div class="slider-group"><label class="field" for="band"><span class="field-heading"><span>Distance tolerance</span><output id="bandValue" for="band">12%</output></span><input id="band" type="range" min="0" max="30" step="1" value="12"><span class="scale" aria-hidden="true"><span>0% · Precise</span><span>30% · Flexible</span></span><span class="hint">Approach above this band; retreat below it. Inside: strafe or hold position.</span></label></div>
+<div class="divider"></div><label class="check"><input id="strafe" type="checkbox" checked><span><span class="check-title">Circle-strafe</span><span class="hint">Move sideways around a detected enemy inside the distance band. Movement only — no attack-drag gestures or guaranteed circular route.</span></span></label>
+<div class="nested"><label class="field" for="period"><span class="field-heading"><span>Change strafe direction every</span><output id="periodValue" for="period">2 s</output></span><input id="period" type="range" min="0.5" max="6" step="0.5" value="2"><span class="scale" aria-hidden="true"><span>0.5 s</span><span>6 s</span></span></label></div>
+<div class="divider"></div><label class="field" for="idle"><span class="field-heading">When no enemy is detected</span><select id="idle"><option value="explore">Explore — change direction every 2 seconds</option><option value="stay">Stand still</option><option value="follow">Follow nearest visible teammate</option></select></label>
+<label class="field field-spaced" for="leash"><span class="field-heading"><span>Idle teammate distance</span><output id="leashValue" for="leash">3 tiles</output></span><input id="leash" type="range" min="1" max="8" step="0.5" value="3"><span class="hint">Used only when following. Uses the engine's tile size; no combat leash or AFK detection. Without a visible teammate, stand still.</span></label>
+<div class="divider"></div><label class="check"><input id="gas" type="checkbox" checked><span><span class="check-title">React to detected poison gas</span><span class="hint">Prioritize moving away and reject unsafe directions. If every checked direction is unsafe, stop. No map-wide escape route.</span></span></label>
+<div class="info"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-9h.01"/></svg><span><strong>Wall checks are always on.</strong> Known blocked directions are rejected. This is local avoidance, not A* pathfinding.</span></div></div></section>
+<section id="combat" class="card combat"><div class="card-head"><span class="section-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m4 3 17 17m-5-17L3 16m1-13v5h5m7-5h5v5M3 16l5 5m8-5 5 5"/></svg></span><div><h2>Combat & abilities</h2><p>Auto-aim, with native engine safeguards.</p></div><span class="section-number">03 / 04</span></div><div class="card-body"><p class="description">Normal auto-aim taps, with automatic hold/release for charge and hold brawlers in the Android catalog. No attack-drag gestures.</p><div class="ability-list">
+<label class="check"><input id="super" type="checkbox"><span><span class="check-title">Auto Super</span><span class="hint">Non-hold brawlers only. Requires an attackable target inside both attack and Super range.</span></span></label>
+<label class="check"><input id="gadget" type="checkbox"><span><span class="check-title">Auto Gadget</span><span class="hint">Non-hold brawlers only, with an attackable target inside attack range.</span></span></label>
+<label class="check"><input id="hyper" type="checkbox"><span><span class="check-title">Auto Hypercharge</span><span class="hint">Non-hold brawlers only, with an attackable target inside attack range.</span></span></label></div>
+<div class="info warning"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 10 18H2Zm0 6v5m0 3h.01"/></svg><span>Optional abilities start <strong>off</strong>. There is no HP, jump/teleport, enemy-count or gadget-specific safety model. Native readiness, freshness and STOP checks remain in control.</span></div></div></section></section>
+<aside class="sidebar" aria-label="Export and instructions"><section id="export" class="card export-card"><div class="card-body"><div class="export-top"><span class="group-title">04 / Export</span><span class="tag">Android v4 API</span></div><h2 class="export-title">Ready when you are.</h2><p class="export-subtitle">Your settings become a standalone playstyle. No account. No upload.</p><div class="file-box"><span class="file-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14 2H5v20h14V7Zm0 0v5h5M8 12l-2 2 2 2m8-4 2 2-2 2m-4-5-1 6"/></svg></span><div class="file-text"><div id="filename" class="filename"></div><div class="file-meta">.pyla script · UTF-8 · Android</div></div></div><p id="overview" class="summary"></p><div class="actions"><button id="download" class="primary" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></svg>Download .pyla</button><button id="copy" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M15 8V3H3v13h5"/></svg>Copy generated code</button></div><div id="status" class="status" role="status" aria-live="polite">Ready. All processing stays on this device.</div><details class="code-details"><summary>View generated code</summary><textarea id="preview" readonly spellcheck="false" aria-label="Generated pyla code"></textarea></details></div></section>
+<section id="guide" class="card guide"><h2>A few steps. Then you're set.</h2><ol class="steps"><li><span><strong>Make it yours.</strong><br>Choose a preset and fine-tune its settings.</span></li><li><span><strong>Save your playstyle.</strong><br>Download the .pyla file to your device.</span></li><li><span><strong>Import in PylaAndroid.</strong><br>Stop the bot. Open Playstyles → Import custom .pyla and select your file.</span></li><li><span><strong>Check the active script.</strong><br>Select it and confirm the playstyle in the logs after starting.</span></li></ol><div class="info warning"><span>Designed for the Android v4 scripting API, not PC-only helpers. Import success does not guarantee live gameplay behavior. If import fails, keep the file and the displayed error for diagnosis.</span></div></section>
+<div class="trust"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Zm-4 9 3 3 5-6"/></svg><span>Private by design.<br>Everything is generated locally. No libraries, tracking or external requests.</span></div></aside></div>
+<footer class="footer"><p>PylaAndroid Playstyle Studio · Android v4 scripting surface. Actual gameplay depends on the brawler catalog, detections and native engine behavior.</p><span>Standalone HTML / UI edition 1.1</span></footer>
+</main>
+<script>
+'use strict';
+const BUILDER_VERSION = '1.0';
+const PRESETS = {
+  balanced: {label:'Balanced', range:85, band:12, strafe:true, period:2, idle:'explore', leash:3, gas:true, super:false, gadget:false, hyper:false},
+  kiter: {label:'Kiter', range:95, band:8, strafe:true, period:2, idle:'stay', leash:3, gas:true, super:false, gadget:false, hyper:false},
+  rusher: {label:'Rusher', range:45, band:15, strafe:false, period:2, idle:'explore', leash:3, gas:true, super:false, gadget:false, hyper:false},
+  team: {label:'Team follower', range:85, band:12, strafe:true, period:2, idle:'follow', leash:3, gas:true, super:false, gadget:false, hyper:false},
+  guard: {label:'Guard', range:95, band:10, strafe:false, period:2, idle:'stay', leash:3, gas:true, super:false, gadget:false, hyper:false}
+};
+function validateConfig(input) {
+  const c = {...input};
+  for (const key of ['name','author']) {
+    if (typeof c[key] !== 'string') throw Error('Invalid '+key);
+    c[key] = c[key].trim();
+    if (c[key].length > 80 || /[\u0000-\u001f\u007f]/.test(c[key])) throw Error(key+' must be at most 80 characters, without control characters.');
+  }
+  if (!c.name) throw Error('Give your playstyle a name.');
+  const bounds = {range:[20,110],band:[0,30],period:[0.5,6],leash:[1,8]};
+  for (const [key,[lo,hi]] of Object.entries(bounds)) {
+    if (typeof c[key] === 'string' && !c[key].trim()) throw Error('Missing '+key);
+    const n = Number(c[key]);
+    if (!Number.isFinite(n) || n<lo || n>hi) throw Error('Invalid '+key+' ('+lo+'–'+hi+').');
+    c[key] = Math.round(n*100)/100;
+  }
+  if (!['stay','follow','explore'].includes(c.idle)) throw Error('Invalid idle mode.');
+  for (const key of ['strafe','gas','super','gadget','hyper']) if (typeof c[key] !== 'boolean') throw Error('Invalid '+key);
+  return c;
+}
+function fileName(name) {
+  return (name.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9_-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,64) || 'custom_playstyle')+'.pyla';
+}
+function generate(input) {
+ const c = validateConfig(input);
+ const description = 'Android v4.0.0 builder '+BUILDER_VERSION+'; distance '+c.range+'% of attack range; '+c.idle+' when no target; strafe '+(c.strafe?'on':'off')+'.';
+ const header = JSON.stringify({name:c.name,description,brawlers:['all'],gamemodes:['all'],author:c.author || 'Custom'});
+ const body = `# Generated for PylaAndroid v4.0.0. Not a PC-only playstyle.
+# Vectors are reference-space; detection coordinates are capture-space.
+# Local wall checks only: no A*, world coordinates, HP logic or aim gestures.
+# A failed movement search returns (0, 0), never a blocked fallback.
+
+def reference_move(dx, dy):
+    return normalize_move(dx / width_ratio, dy / height_ratio)
+
+def gas_clear(move, gas):
+    if move[0] < -0.01 and gas.get("left", 0) > 0:
+        return False
+    if move[0] > 0.01 and gas.get("right", 0) > 0:
+        return False
+    if move[1] < -0.01 and gas.get("up", 0) > 0:
+        return False
+    if move[1] > 0.01 and gas.get("down", 0) > 0:
+        return False
+    return True
+
+def checked_move(wanted, gas):
+    if abs(wanted[0]) + abs(wanted[1]) < 0.01:
+        return (0, 0)
+    for angle in [0, 0.7853981634, -0.7853981634, 1.5707963268, -1.5707963268, 2.3561944902, -2.3561944902, 3.1415926536]:
+        candidate = rotate_movement(wanted, angle)
+        # Wall geometry is capture-space, unlike the movement output.
+        capture_candidate = (candidate[0] * width_ratio, candidate[1] * height_ratio)
+        if gas_clear(candidate, gas) and not is_path_blocked(player_data, capture_candidate, walls):
+            return candidate
+    return (0, 0)
+
+now = time_now()
+player = get_entity_pos(player_data)
+enemy, distance = find_closest_enemy(enemy_data, player, walls, "attack")
+ally, ally_distance = find_closest_teammate(teammate_data, player)
+safe_range, attack_range, super_range = get_brawler_range(brawler)
+wanted = (0, 0)
+gas = ${c.gas?'is_there_poison_gas(player_data)':'{"up": 0, "down": 0, "left": 0, "right": 0}'}
+gas_x = gas.get("left", 0) - gas.get("right", 0)
+gas_y = gas.get("up", 0) - gas.get("down", 0)
+gas_near = gas.get("left", 0) + gas.get("right", 0) + gas.get("up", 0) + gas.get("down", 0) > 0
+
+if gas_near:
+    wanted = reference_move(gas_x, gas_y)
+elif enemy is not None and distance is not None:
+    dx = enemy[0] - player[0]
+    dy = enemy[1] - player[1]
+    desired = attack_range * ${(c.range/100).toFixed(4)}
+    margin = attack_range * ${(c.band/100).toFixed(4)}
+    if distance > desired + margin:
+        wanted = reference_move(dx, dy)
+    elif distance < max(0, desired - margin):
+        wanted = reference_move(-dx, -dy)
+${c.strafe?`    else:
+        direction = 1
+        if int(now / ${c.period.toFixed(2)}) % 2 == 1:
+            direction = -1
+        radial = reference_move(dx, dy)
+        wanted = rotate_movement(radial, direction * 1.5707963268)
+`:''}${c.idle==='follow'?`elif ally is not None and ally_distance is not None:
+    if ally_distance > TILE_SIZE * ${c.leash.toFixed(2)}:
+        wanted = reference_move(ally[0] - player[0], ally[1] - player[1])
+`:c.idle==='explore'?`else:
+    directions = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)]
+    wander = directions[int(now / 2) % 8]
+    wanted = normalize_move(wander[0], wander[1])
+`:''}
+movement = checked_move(wanted, gas)
+
+# Auto-aim requests only; native freshness, geometry and STOP gates stay authoritative.
+can_attack = False
+if enemy is not None and distance is not None:
+    can_attack = distance <= attack_range and is_enemy_hittable(player, enemy, walls, "attack")
+info = brawlers_info.get(brawler, {})
+hold_started = persistent_data.get("time_since_holding_attack")
+needs_hold = must_brawler_hold_attack(brawler)
+hold_duration = max(0.1, (info.get("hold_attack", 0) or 0) + seconds_to_hold_attack_after_reaching_max)
+if hold_started is not None:
+    if not can_attack or not needs_hold or now < hold_started or now - hold_started >= hold_duration:
+        attack(touch_up=True, touch_down=False)
+        persistent_data["time_since_holding_attack"] = None
+elif can_attack:
+    if needs_hold:
+        attack(touch_up=False, touch_down=True)
+        persistent_data["time_since_holding_attack"] = now
+    else:
+        attack()
+${c.super||c.gadget||c.hyper?`
+# Optional abilities have no HP/team-count/jump safety model.
+if can_attack and not needs_hold and hold_started is None:
+${c.gadget?'    if is_gadget_ready:\n        use_gadget()\n':''}${c.hyper?'    if is_hypercharge_ready:\n        use_hypercharge()\n':''}${c.super?'    if is_super_ready and distance <= super_range and is_enemy_hittable(player, enemy, walls, "super"):\n        use_super()\n':''}`:''}`;
+ return header+'\n'+body;
+}
+if (typeof module !== 'undefined') module.exports = {generate, validateConfig, PRESETS, fileName};
+
+</script>
+<script>
+const $ = id => document.getElementById(id);
+const fields = ['name','author','range','band','strafe','period','idle','leash','gas','super','gadget','hyper'];
+let currentCode = '', currentFilename = '';
+function readConfig(){const c={};for(const key of fields){const el=$(key);c[key]=el.type==='checkbox'?el.checked:el.value;}return c;}
+function setStatus(text,error=false){$('status').textContent=text;$('status').classList.toggle('error',error);}
+function refresh(){
+ try{const c=validateConfig(readConfig());currentCode=generate(c);currentFilename=fileName(c.name);$('preview').value=currentCode;$('filename').textContent=currentFilename;$('overview').textContent=`${c.range}% preferred range · ±${c.band}% tolerance · ${c.strafe?'Strafe every '+c.period+' s':'No strafe'} · ${c.idle==='follow'?'Follow teammates':c.idle==='stay'?'Idle: stand still':'Idle: explore'}`;for(const [key,suffix]of Object.entries({range:'%',band:'%',period:' s',leash:' tiles'}))$(key+'Value').textContent=c[key]+suffix;$('period').disabled=!c.strafe;$('leash').disabled=c.idle!=='follow';$('download').disabled=false;$('copy').disabled=false;setStatus('Ready. All processing stays on this device.');}
+ catch(e){currentCode='';$('preview').value='';$('filename').textContent='Fix settings to export';$('download').disabled=true;$('copy').disabled=true;setStatus(e.message,true);}
+}
+for(const key of fields)$(key).addEventListener('input',refresh);
+$('preset').addEventListener('change',()=>{const p=PRESETS[$('preset').value];for(const key of fields){if(!(key in p))continue;const el=$(key);if(el.type==='checkbox')el.checked=p[key];else el.value=p[key];}refresh();});
+$('download').addEventListener('click',()=>{refresh();if(!currentCode)return;const url=URL.createObjectURL(new Blob([currentCode],{type:'application/octet-stream'}));const a=document.createElement('a');a.href=url;a.download=currentFilename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);setStatus('File prepared. Check your browser Downloads, then import it in PylaAndroid.');});
+$('copy').addEventListener('click',async()=>{if(!currentCode)return;try{await navigator.clipboard.writeText(currentCode);setStatus('Code copied. Save as UTF-8 with the .pyla extension.');}catch(e){$('preview').closest('details').open=true;$('preview').focus();$('preview').select();setStatus('Clipboard unavailable here. The code is selected; copy it manually.');}});
+refresh();
+</script>
+<script>
+const presetDescriptions={balanced:'A flexible mix of approach, retreat and sideways movement.',kiter:'Keep near maximum attack range, with room to reposition.',rusher:'Close the distance. Keep pressure on nearby targets.',team:'Regroup with the nearest visible teammate when no enemy is detected.',guard:'Hold position when idle. Reposition when a target appears.'};
+function syncPresetUI(){document.querySelectorAll('[data-preset]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.preset===document.getElementById('preset').value)));document.getElementById('presetDescription').textContent=presetDescriptions[document.getElementById('preset').value];}
+document.querySelectorAll('[data-preset]').forEach(button=>button.addEventListener('click',()=>{const select=document.getElementById('preset');select.value=button.dataset.preset;select.dispatchEvent(new Event('change',{bubbles:true}));}));
+document.getElementById('preset').addEventListener('change',syncPresetUI);syncPresetUI();
+</script>
+</body></html>
