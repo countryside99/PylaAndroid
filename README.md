@@ -58,7 +58,9 @@ file — no server, account or upload involved. Import it in PylaAndroid via **P
 custom .pyla**, then select the playstyle and check the logs after starting. The builder only
 creates the script; detections, brawler data and native input gates stay authoritative, and import
 success is not proof of gameplay behaviour. See the
-[builder README](tools/playstyle-builder/README.md) for limits and the included checks.
+[builder README](tools/playstyle-builder/README.md) for limits and the included checks.<
+
+**Too lazy for playstyle builder and wanna use AI? Take a look at the [AGENTS.md](tools/playstyle-builder/AGENTS.md)**
 
 # Can I use on Emulator?
 Yes! You can use **PylaAndroid's APK** also directly on your android **emulator**!
