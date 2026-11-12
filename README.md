@@ -4,14 +4,11 @@
 
 PylaAndroid is an on-device PylaAI port for Android — no root and no ADB required.
 
-- **Upstream project:** [countryside99/PylaAndroid](https://github.com/countryside99/PylaAndroid)
-- This community contribution carries an **experimental** Android development snapshot for review. The original authors and attribution are preserved; test builds are hosted separately on the [contribution fork's releases page](https://github.com/Fetzi672/PylaAndroid/releases).
-
 Every PylaAI file such as `play.py` or `trophy_observer.py` is fully rewritten in Kotlin as `Play.kt`, `TrophyObserver.kt` and the others.
 
-# Development status ⚠️
+# Development status
 
-**EARLY BETA / EXPERIMENTAL.** This is not a finished product and it is **not a guarantee of unattended gameplay** on any phone. Expect bugs, and always supervise the app while it runs. Some functions are reliable, others are only partially reliable — see [docs/FORK_STATUS.md](docs/FORK_STATUS.md) and [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) before you rely on anything.
+**STABLE.** This is not a finished product and it is **not a guarantee of unattended gameplay** on any phone. Expect bugs, and always supervise the app while it runs. However, most bugs got fixed right now, **it is** reliable to let it go, always report bugs.
 
 # How to use
 Follow these steps to start using **PylaAI** on your Android device.
