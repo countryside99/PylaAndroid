@@ -14,6 +14,15 @@ class DefeatedExitGateTest {
         val g = DefeatedExitGate(); val t = admitted(g)
         assertTrue(g.allows(t, 200)); assertEquals(1300f, t.observation.x, 0f)
     }
+    @Test fun resultScreenGateKeepsEvidenceOnlyOnItsOwnScreen() {
+        val g = DefeatedExitGate(screen = "end_ranked")
+        assertNull(g.observe(obs(100), g.generation(), 100))
+        g.screenChanged("end_ranked") // own screen: evidence survives
+        val t = requireNotNull(g.observe(obs(200), g.generation(), 200))
+        assertTrue(g.allows(t, 200))
+        g.screenChanged("defeated") // any other screen revokes it
+        assertFalse(g.allows(t, 200))
+    }
     @Test fun oneObservationOrRepeatedCaptureNeverAdmits() {
         val g = DefeatedExitGate()
         repeat(5) { assertNull(g.observe(obs(100), g.generation(), 100)) }

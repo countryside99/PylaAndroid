@@ -795,6 +795,10 @@ class BotEngine(
                         return
                     }
                     pickedFirstBrawler = true
+                    // Game is loaded and idle in the lobby: measure inference settings now.
+                    try { if (::play.isInitialized) play.tuneInference() } catch (t: Throwable) {
+                        DiagnosticLog.failure("engine", "tune", "threw", t)
+                    }
                     stageManager.updateTrophyObserver()
                     val autoPick = toBool(first["automatically_pick"], false)
                     PylaLog.p(TAG, "First lobby reached: brawler=${first["brawler"]} automatically_pick=$autoPick")

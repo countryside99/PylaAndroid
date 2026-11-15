@@ -47,7 +47,9 @@ object AttackButtonDetector {
      * Returns `null` when the image is empty, not 3-channel, or the control is missing or
      * ambiguous.
      */
-    fun detect(image: org.opencv.core.Mat): AttackButtonPoint? {
+    fun detect(image: org.opencv.core.Mat): AttackButtonPoint? = detect(image, false)
+
+    private fun detect(image: org.opencv.core.Mat, controlQuadrantOnly: Boolean): AttackButtonPoint? {
         // Stale evidence is cleared before ANY outcome of this call, including an invalid Mat or
         // a throwing one, so a failed frame can never be attributed to the previous frame's trace.
         latestTrace.set(null)
@@ -64,7 +66,7 @@ object AttackButtonDetector {
         // Mat.get on a continuous 3-channel Mat yields row-major interleaved RGB bytes, which is
         // exactly the layout AttackButtonPixels expects.
         val metrics = AttackRecognitionMetrics()
-        val point = AttackButtonPixels.detect(width, height, bytes, metrics)
+        val point = AttackButtonPixels.detect(width, height, bytes, metrics, controlQuadrantOnly)
         // Only a completed analysis of this very call is published, and only after it finished,
         // so a reader can never observe a partially filled trace.
         latestTrace.set(metrics.toTrace())
@@ -100,7 +102,7 @@ object AttackButtonDetector {
         templateMatcher: (org.opencv.core.Mat) -> TemplateControlResult,
     ): AttackButtonPoint? {
         var template: TemplateControlResult? = null
-        val merged = detectForAttack(image) { templateMatcher(it).also { result -> template = result } }
+        val merged = detectForAttack(image, controlQuadrantOnly = true) { templateMatcher(it).also { result -> template = result } }
         if (merged == null) return null
         when (latestTrace.get()?.outcome) {
             AttackRecognitionOutcome.TEMPLATE_POINT,
@@ -127,10 +129,11 @@ object AttackButtonDetector {
      */
     internal fun detectForAttack(
         image: org.opencv.core.Mat,
+        controlQuadrantOnly: Boolean = false,
         templateMatcher: (org.opencv.core.Mat) -> TemplateControlResult,
     ): AttackButtonPoint? {
         latestTrace.set(null)
-        val baselinePoint = detect(image)
+        val baselinePoint = detect(image, controlQuadrantOnly)
         val baseline = latestTrace.get() ?: return null
         // Baseline ambiguity or a malformed frame vetoes before any template work.
         if (TemplateAttackControlMerge.vetoesTemplate(baseline.outcome)) return null

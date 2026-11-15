@@ -244,8 +244,9 @@ fun DiagnosticPanel(modifier: Modifier = Modifier) {
             text = {
                 Column {
                     Text(
-                        "Your redacted PylaAndroid event log, app version and Android API " +
-                            "level are sent to pyla-logs.fetzi-ai.de and stored on Cloudflare. " +
+                        "Your redacted PylaAndroid event log, app version, Android API level, " +
+                            "device model, screen size and CPU/RAM class are sent to " +
+                            "pyla-logs.fetzi-ai.de and stored on Cloudflare. " +
                             "Reports expire after 7 days. Anyone with your report ID can view " +
                             "the report after human verification; review it before sharing the ID.",
                         color = PylaColors.TextMed,

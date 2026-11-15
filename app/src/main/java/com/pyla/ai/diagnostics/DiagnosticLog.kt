@@ -12,7 +12,9 @@ object DiagnosticLog {
     const val MAX_BYTES = 256 * 1024
     const val MAX_CAUSE_DEPTH = 8
     const val MAX_MESSAGE_CHARS = 2_000
-    private const val HEADER_RESERVE = 256
+    private const val HEADER_RESERVE = 512
+    private const val MAX_DEVICE_CHARS = 200
+    @Volatile private var deviceProfile: String = ""
     private const val MAX_CHANNELS = 128
     private val lock = Any()
     private val entries = ArrayDeque<String>()
@@ -118,6 +120,8 @@ object DiagnosticLog {
             val suffix = if (suppressed > 0) " ($suppressed repeats folded)" else ""
             val line = "${++sequence}|$elapsed|$prefix $body$suffix"
             entries.addLast(line)
+            // Debug builds mirror the already-sanitized line to Logcat for on-device development.
+            if (com.pyla.ai.BuildConfig.DEBUG) try { android.util.Log.d("PylaDiag", line) } catch (_: Throwable) { }
             bytes += line.toByteArray(Charsets.UTF_8).size + 1
             while (entries.size > MAX_ENTRIES || bytes > MAX_BYTES - HEADER_RESERVE) {
                 bytes -= entries.removeFirst().toByteArray(Charsets.UTF_8).size + 1
@@ -138,11 +142,23 @@ object DiagnosticLog {
         names.joinToString(" <- ")
     } catch (_: Throwable) { "Throwable" }
 
+    /**
+     * Non-identifying compatibility facts (manufacturer, model, API, ABI, screen and capture size,
+     * core count, RAM class). Deliberately no serial, Android ID, IMEI, account or network data.
+     * Kept outside the ring so a long session cannot rotate it out of the report.
+     */
+    fun setDeviceProfile(profile: String) {
+        deviceProfile = try {
+            profile.filter { it.code in 32..126 && it != '#' }.take(MAX_DEVICE_CHARS).trim()
+        } catch (_: Throwable) { "" }
+    }
+
     fun snapshot(): DiagnosticSnapshot {
         val id = UUID.randomUUID().toString()
         val text = synchronized(lock) {
             "# pyla-diagnostics schema=1\n# report_id=$id\n# entries=${entries.size}\n" +
                 "# diagnostic_revision=flow_logs_v1\n# dropped_entries=$droppedEntries\n# folded_entries=$foldedEntries\n" +
+                (if (deviceProfile.isEmpty()) "" else "# device=$deviceProfile\n") +
                 entries.joinToString("\n")
         }
         return DiagnosticSnapshot(id, text)
@@ -154,7 +170,7 @@ object DiagnosticLog {
 
     internal fun resetForTesting() = synchronized(lock) {
         entries.clear(); channels.clear(); bytes = 0; sequence = 0
-        droppedEntries = 0; foldedEntries = 0
+        droppedEntries = 0; foldedEntries = 0; deviceProfile = ""
     }
 
     private val URL = Regex("""(?i)\b[a-z][a-z0-9+.\-]*://\S+""")

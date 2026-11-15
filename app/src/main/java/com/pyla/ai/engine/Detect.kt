@@ -36,6 +36,12 @@ class Detect(
      * only by the semantic per-cell geometry; ignored by the legacy box decoder.
      */
     private val terrainTileSize: Double = 54.0,
+    /**
+     * Measure thread counts and providers on this device instead of trusting fixed heuristics.
+     * Only honoured while both `cpu_or_gpu` and `used_threads` are "auto"; an explicit user
+     * setting always wins. Any measurement problem falls back to the previous fixed selection.
+     */
+    private val autoTune: Boolean = false,
 ) {
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
     private val preferredDevice: String = PylaConfig.load("cfg/general_config.toml")
@@ -50,11 +56,14 @@ class Detect(
     private val padValue: Float = 128f / 255f
     /** Non-null only when [semanticTerrain] was declared and manifest/model IO validated. */
     private var semanticRuntime: SemanticTerrainRuntime? = null
-    private val configuredThreadCount = threads.coerceIn(1, Runtime.getRuntime().availableProcessors().coerceAtLeast(1))
+    private var configuredThreadCount = threads.coerceIn(1, Runtime.getRuntime().availableProcessors().coerceAtLeast(1))
+    /** Steady-state inference time measured while tuning, or null when tuning did not run. */
+    var tunedMedianMs: Long? = null
+        private set
     /** Observation only: stage triple for this model's declared role; never read by detection. */
     private val timingStages: TimingStages = TimingStages.forRole(telemetryRole)
     /** Observation only: the EP the session factory intended to build, before any fallback. */
-    private var requestedProviderName: String = "UNKNOWN"
+    private var requestedProviderName: String = "AUTO"
 
     init {
         try { org.opencv.core.Core.setNumThreads(configuredThreadCount) } catch (_: Throwable) {}
@@ -64,7 +73,11 @@ class Detect(
         val manifest = if (semanticTerrain) loadSemanticManifest(modelFile) else null
         inputH = manifest?.height ?: inputSize.first
         inputW = manifest?.width ?: inputSize.second
-        val loaded = createSessionWithFallback(modelFile, configuredThreadCount)
+        // Device-measured threads/provider when everything is on "auto"; otherwise, or when
+        // nothing could be measured, the original fixed selection below is used unchanged.
+        val tuned = if (autoTune && preferredDevice == "auto") SessionTuning.tune(env, modelFile, padValue, isEmulator()) else null
+        if (tuned != null) { configuredThreadCount = tuned.threads; tunedMedianMs = tuned.medianMs }
+        val loaded = tuned?.let { it.session to it.provider } ?: createSessionWithFallback(modelFile, configuredThreadCount)
         session = loaded.first
         providerName = loaded.second
         inputName = session.inputNames.first()

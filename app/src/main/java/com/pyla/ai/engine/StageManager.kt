@@ -38,13 +38,15 @@ class StageManager(
             "lobby", "shop", "brawler_selection", "popup", "defeated", "trophy_reward",
             "prestige_milestone", "nano_noodles",
             "star_drop_regular", "star_drop_angelic", "star_drop_demonic", "star_drop_starr_nova",
-            "end_victory", "end_defeat", "end_draw",
+            "end_victory", "end_defeat", "end_draw", "end_ranked", "reward_continue", "reward_reveal",
             "end_trio_showdown_0", "end_trio_showdown_1", "end_trio_showdown_2", "end_trio_showdown_3",
         )
     }
 
     val trophyObserver = TrophyObserver()
     private val defeatedExitGate = DefeatedExitGate()
+    private val resultExitGate = DefeatedExitGate(screen = "end_ranked")
+    private val rewardContinueGate = DefeatedExitGate(screen = "reward_continue")
     /** Positive menu identity gate for the upper-left BACK (see [quitShop]). */
     private val menuBackGate = MenuBackAdmission()
     @Volatile private var closed = false
@@ -75,10 +77,16 @@ class StageManager(
     fun invalidateNavigation() {
         navigationAuthority.invalidate()
         defeatedExitGate.invalidate(android.os.SystemClock.elapsedRealtime())
+        resultExitGate.invalidate(android.os.SystemClock.elapsedRealtime())
+        rewardContinueGate.invalidate(android.os.SystemClock.elapsedRealtime())
         menuBackGate.invalidate()
     }
 
-    fun navigationStateObserved(state: String?) = defeatedExitGate.screenChanged(state)
+    fun navigationStateObserved(state: String?) {
+        defeatedExitGate.screenChanged(state)
+        resultExitGate.screenChanged(state)
+        rewardContinueGate.screenChanged(state)
+    }
 
     /**
      * One Stage navigation invocation, bound at its start to the lifecycle epoch current at that
@@ -134,15 +142,30 @@ class StageManager(
     }
 
     /** Visible enabled EXIT only, with two fresh captures and a queue-time revocation guard. */
-    private fun exitDefeated(invocation: Invocation) {
-        if (closed || !navigationAllowed() || getState() != "defeated") return
+    private fun exitDefeated(invocation: Invocation) =
+        exitVisibleControl(invocation, "defeated", defeatedExitGate, "defeated_exit", StateFinder::findDefeatedExit)
+
+    /** Ranked result screen (Rank / PLAY AGAIN / EXIT): leave through its visible EXIT. */
+    private fun exitResult(invocation: Invocation) =
+        exitVisibleControl(invocation, "end_ranked", resultExitGate, "result_exit", StateFinder::findResultExit)
+
+    /** Reward presentation: leave through its visible CONTINUE, never through EQUIP/BUY. */
+    private fun continueReward(invocation: Invocation) =
+        exitVisibleControl(invocation, "reward_continue", rewardContinueGate, "reward_continue", StateFinder::findRewardContinue)
+
+    private fun exitVisibleControl(
+        invocation: Invocation, screen: String, gate: DefeatedExitGate, phase: String,
+        locate: (Mat) -> org.opencv.core.Point?,
+    ) {
+        if (closed || !navigationAllowed() || getState() != screen) return
+        val defeatedExitGate = gate
         val generation = defeatedExitGate.generation()
         val geometry = com.pyla.ai.capture.InputCoordinates.geometryGeneration
         val frame = windowController.screenshot()
         val mat = PylaUtils.frameToMat(frame)
-        val target = try { StateFinder.findDefeatedExit(mat) } finally { mat.release() }
+        val target = try { locate(mat) } finally { mat.release() }
         val now = android.os.SystemClock.elapsedRealtime()
-        val valid = target != null && !closed && navigationAllowed() && getState() == "defeated" &&
+        val valid = target != null && !closed && navigationAllowed() && getState() == screen &&
             com.pyla.ai.capture.InputCoordinates.geometryGeneration == geometry
         val observation = DefeatedExitGate.Observation(
             frame.capturedAtMs, frame.width, frame.height,
@@ -153,18 +176,18 @@ class StageManager(
             // New Stage lifecycle bound guard composed in: the original ticket/pixel/two-fresh-frame
             // evidence below is unchanged and still required.
             invocation.isLive &&
-                !closed && navigationAllowed() && getState() == "defeated" &&
+                !closed && navigationAllowed() && getState() == screen &&
                 com.pyla.ai.capture.InputCoordinates.geometryGeneration == geometry &&
                 com.pyla.ai.capture.InputCoordinates.captureWidth == frame.width &&
                 com.pyla.ai.capture.InputCoordinates.captureHeight == frame.height &&
                 defeatedExitGate.allows(ticket, android.os.SystemClock.elapsedRealtime())
         }
         if (!guard()) {
-            DiagnosticLog.sample("navigation.denied", "phase=defeated_exit reason=evidence_or_authority", 10_000)
+            DiagnosticLog.sample("navigation.denied", "phase=$phase reason=evidence_or_authority", 10_000)
             return
         }
-        DiagnosticLog.event("navigation.defeated_exit", "reason=visible_enabled_control attempt=${ticket.serial}")
-        BotStatus.action("Pressing visible EXIT")
+        DiagnosticLog.event("navigation.$phase", "reason=visible_enabled_control attempt=${ticket.serial}")
+        BotStatus.action(if (screen == "reward_continue") "Pressing visible CONTINUE" else "Pressing visible EXIT")
         windowController.guardedNavigationTap(observation.x, observation.y, guard)
     }
 
@@ -185,6 +208,8 @@ class StageManager(
 
     fun doState(state: String) {
         defeatedExitGate.screenChanged(state)
+        resultExitGate.screenChanged(state)
+        rewardContinueGate.screenChanged(state)
         DiagnosticLog.event("stage.do_state", "state=$state queue=${brawlersPickData.size}")
         PylaLog.p(TAG, "doState: $state")
         BotStatus.action("doState: $state")
@@ -198,11 +223,13 @@ class StageManager(
             "shop", "brawler_selection" -> quitShop(invocation, state)
             "popup" -> closePopUp(invocation)
             "defeated" -> exitDefeated(invocation)
-            "match", "match_making", "match_start", "result_preview", "end_ranked", "transition" -> {}
+            "end_ranked" -> exitResult(invocation)
+            "reward_continue" -> continueReward(invocation)
+            "match", "match_making", "match_start", "result_preview", "transition" -> {}
             "lobby" -> startGame(invocation)
             "star_drop_regular", "star_drop_angelic", "star_drop_demonic", "star_drop_starr_nova" ->
                 clickStarDrop(invocation, state)
-            "trophy_reward" ->
+            "trophy_reward", "reward_reveal" ->
                 windowController.guardedNavigationPress("proceed", 20L, invocation.action(state))
             "prestige_milestone" -> handlePrestige(invocation)
             "nano_noodles" -> clickNanoNoodles(invocation, state)
@@ -300,9 +327,9 @@ class StageManager(
         val blobs = findCanisterBlobs()
         Log.i(TAG, "Nano noodles: ${blobs.size} canisters visible at ${blobs.map { "(${it.first.toInt()},${it.second.toInt()})" }}")
         if (blobs.size < 3) {
-            val hr = windowController.heightRatio
+            val hr = com.pyla.ai.capture.UiLayout.unit(windowController.width, windowController.height).toFloat()
             val cx = windowController.width / 2f
-            val y = 740 * hr
+            val y = com.pyla.ai.capture.UiLayout.y(740.0, windowController.width, windowController.height).toFloat()
             val offset = 330 * hr
             for (x in listOf(cx, cx + offset, cx - offset)) {
                 windowController.guardedNavigationTap(x, y, invocation.action(state))
@@ -540,8 +567,8 @@ class StageManager(
             "state=$state reason=confirmed_menu_identity attempt=${granted.serial}",
         )
         windowController.guardedNavigationTap(
-            100f * windowController.heightRatio,
-            60f * windowController.heightRatio,
+            100f * com.pyla.ai.capture.UiLayout.unit(windowController.width, windowController.height).toFloat(),
+            60f * com.pyla.ai.capture.UiLayout.unit(windowController.width, windowController.height).toFloat(),
             guard,
         )
         invocation.await(1_000)

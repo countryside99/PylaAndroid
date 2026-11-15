@@ -77,6 +77,15 @@ object DeviceProfile {
         return limit
     }
 
+    /** Compatibility facts for an opt-in diagnostic report. No stable device identifier. */
+    fun diagnosticProfile(screenW: Int, screenH: Int, captureW: Int, captureH: Int): String {
+        fun clean(value: String?) = (value ?: "?").filter { it.isLetterOrDigit() || it in "-_. " }.take(32).trim().replace(' ', '_')
+        val tier = when { isLowEnd -> "low"; isMidRange -> "mid"; else -> "high" }
+        return "mfr=${clean(Build.MANUFACTURER)} model=${clean(Build.MODEL)} api=${Build.VERSION.SDK_INT} " +
+            "abi=${clean(Build.SUPPORTED_ABIS.firstOrNull())} screen=${screenW}x$screenH capture=${captureW}x$captureH " +
+            "cores=$cpuCores ram_mb=$totalRamMb tier=$tier"
+    }
+
     fun summary(): String =
         "cores=$cpuCores ram=${totalRamMb}MB lowRam=$isLowRamDevice " +
             "capture=${maxCaptureHeight}p autoIps=$autoMaxIps ortThreads=$autoInferenceThreads"

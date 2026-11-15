@@ -18,7 +18,7 @@ enum class RuntimeState(val label: String) {
             value == "shop" -> SHOP
             value == "popup" -> POPUP
             value?.startsWith("end_") == true -> RESULT
-            value == "nano_noodles" || value == "trophy_reward" || value == "prestige_milestone" ||
+            value == "nano_noodles" || value == "trophy_reward" || value == "reward_continue" || value == "reward_reveal" || value == "prestige_milestone" ||
                 value?.startsWith("star_drop_") == true -> REWARD
             // Absence of a menu match is not positive gameplay evidence.
             else -> UNKNOWN
