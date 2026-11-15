@@ -30,12 +30,18 @@ android {
         applicationId = "com.pyla.ai"
         minSdk = 26
         targetSdk = 34
-        versionCode = 30
-        versionName = "3.0.10-calibration-test"
+        versionCode = 40100
+        versionName = "4.1.0"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
     buildTypes {
+        debug {
+            // Same R8 optimization as the release build, so the CI debug APK performs like a release.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true

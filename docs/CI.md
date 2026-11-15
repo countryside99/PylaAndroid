@@ -2,7 +2,7 @@
 
 `Android CI` runs on pull requests (including forks), pushes to `main`, merge-queue checks, and manual dispatch. The stable required-check name is **Tests, lint and debug build**. Enable it in a branch protection rule only after the workflow has completed successfully; this PR does not change branch protection or merge automatically.
 
-The job runs JVM unit tests, Android debug lint, then builds the debug APK. Failures are fatal: neither lint errors nor test failures use `continue-on-error`. Reports are retained for seven days even on failure; the debug APK is uploaded only after all checks pass. APKs use only the runner's disposable debug signing identity; they are not owner-signed releases or compatible-update artifacts for an installed owner build.
+The job runs JVM unit tests, Android debug lint, then builds the debug APK. The debug build is R8-optimized with the same rules as the release build, so its performance is comparable; it stays debuggable and is signed with the runner's debug key, so it cannot update an installed release. Failures are fatal: neither lint errors nor test failures use `continue-on-error`. Reports are retained for seven days even on failure; the debug APK is uploaded only after all checks pass. APKs use only the runner's disposable debug signing identity; they are not owner-signed releases or compatible-update artifacts for an installed owner build.
 
 ## Toolchain and compatibility
 
