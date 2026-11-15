@@ -6,9 +6,9 @@ import java.security.MessageDigest
  * Immutable view of one diagnostics snapshot.
  *
  * The text is already sanitized by [DiagnosticLog] before it ever reaches this class, so an
- * instance can be handed to the upload layer without re-reading the ring buffer. [sha256] and
- * [byteCount] describe the exact UTF-8 bytes of [text] so the receiver can verify what was
- * transmitted. Both are computed once and never change.
+ * instance can be handed to the export layer without re-reading the ring buffer. [sha256] and
+ * [byteCount] describe the exact UTF-8 bytes of [text] so a reader can verify what was
+ * exported. Both are computed once and never change.
  */
 class DiagnosticSnapshot(
     val reportId: String,

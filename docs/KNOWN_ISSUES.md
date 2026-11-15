@@ -67,4 +67,4 @@ Concrete, current defects and limits in this **experimental** snapshot. See [FOR
 
 ## Reporting a new issue
 
-Use the **Bug report** issue form. Include the PylaAndroid version, device model, Android version, game mode and game language, reproduction steps, and expected vs actual behaviour. Screen resolution and a Pyla report ID are optional. Diagnostics details are in [DIAGNOSTICS.md](DIAGNOSTICS.md); sharing a report ID publicly may allow others to read it, so review before posting.
+Use the **Bug report** issue form. Include the PylaAndroid version, device model, Android version, game mode and game language, reproduction steps, and expected vs actual behaviour. Screen resolution and an exported Pyla diagnostic log are optional. Diagnostics details are in [DIAGNOSTICS.md](DIAGNOSTICS.md); the log is plain text, so review the file before posting.

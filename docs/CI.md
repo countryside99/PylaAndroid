@@ -9,7 +9,7 @@ The job runs JVM unit tests, Android debug lint, then builds the debug APK. Fail
 - Gradle is selected by `gradle/wrapper/gradle-wrapper.properties`, not duplicated in the workflow. The official wrapper JAR is validated by `gradle/actions/setup-gradle`; the distribution checksum prevents silently substituted Gradle downloads.
 - Java 17 matches the current Android Gradle Plugin and project compile options. If a future Android Gradle Plugin requires another Java runtime, update the workflow Java version together with that toolchain upgrade.
 - Android SDK licenses are accepted by the SDK setup action. Gradle may install the platform/build tools requested by the repository's Android configuration; the workflow does not duplicate `compileSdk` or build-tools versions.
-- A fresh checkout must work without `local.properties`, owner credentials, private screenshots or `PYLA_DIAGNOSTIC_UPLOAD_TOKEN`. Normal diagnostic uploads therefore remain disabled. Optional `PYLA_DETAIL_FIXTURE_DIR` image checks are not exercised by hosted CI; JVM success is not live recognition or gameplay proof.
+- A fresh checkout must work without `local.properties`, owner credentials, private screenshots or any token. Optional `PYLA_DETAIL_FIXTURE_DIR` image checks are not exercised by hosted CI; JVM success is not live recognition or gameplay proof.
 - Workflow actions are pinned to reviewed immutable commit SHAs. Update those pins deliberately when updating actions.
 - There are no path filters or hard-coded test totals that would reject legitimate source/test additions or leave a required PR check indefinitely pending.
 

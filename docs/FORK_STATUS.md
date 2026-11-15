@@ -44,7 +44,7 @@ To stop the bot immediately, turn off the accessibility service for PylaAndroid 
 
 ## Diagnostics (summary)
 
-Diagnostic upload is opt-in and requires explicit Confirm/Cancel consent. Reports are redacted and are intended to exclude screenshots, raw OCR text and credentials — this is the design intent, not a promise that a report can never contain anything sensitive. Full details live in [DIAGNOSTICS.md](DIAGNOSTICS.md). Sharing a report ID publicly may allow others to read it; review before posting.
+The app has no network access. A diagnostic report is exported as a file that the user saves or shares. Reports are redacted and are intended to exclude screenshots, raw OCR text and credentials — this is the design intent, not a promise that a report can never contain anything sensitive. Full details live in [DIAGNOSTICS.md](DIAGNOSTICS.md). Review an exported report before posting it publicly.
 
 ## Validation
 
@@ -54,4 +54,4 @@ Prior hosted CI on fork source `5dbc1a5f426b91c643ad0ab76355465ce1a3c553`: **448
 
 **Installation/signing:** This beta preserves the signing certificate of the contribution build `1.1.18-dev (20)`, not the different certificate used by the original `v3.0.0` APK. Android cannot update that original installation in place with this APK. Preserve needed configuration before uninstalling the old app; then install this beta and grant the required permissions again. Uninstalling can remove app data.
 
-Use Java 17, Android SDK 34 and Gradle 8.9. `PYLA_DIAGNOSTIC_UPLOAD_TOKEN` is supplied externally for an owner diagnostic build and is never committed; an ordinary build without it cannot use the private upload path.
+Use Java 17, Android SDK 34 and Gradle 8.9.

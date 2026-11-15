@@ -13,7 +13,7 @@
   description: 'Floating overlay controls and rendering.'
 - name: 'area:diagnostics'
   color: '006B75'
-  description: 'Diagnostic consent, reporting, uploads and their documentation.'
+  description: 'Diagnostic logging, export and their documentation.'
 - name: 'area:interpreter'
   color: 'D4C5F9'
   description: 'Pyla language runtime and playstyle scripts.'

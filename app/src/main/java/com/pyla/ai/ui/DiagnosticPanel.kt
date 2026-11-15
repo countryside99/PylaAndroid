@@ -1,34 +1,34 @@
 package com.pyla.ai.ui
 
 import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Article
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Icon
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
@@ -36,94 +36,42 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.pyla.ai.BuildConfig
-import com.pyla.ai.diagnostics.ConsentRequest
-import com.pyla.ai.diagnostics.ConsentState
+import androidx.core.content.FileProvider
+import com.pyla.ai.diagnostics.DiagnosticExport
 import com.pyla.ai.diagnostics.DiagnosticLog
-import com.pyla.ai.diagnostics.DiagnosticReportReference
-import com.pyla.ai.diagnostics.DiagnosticSubmissionCoordinator
-import com.pyla.ai.diagnostics.DiagnosticUploadConfig
-import com.pyla.ai.diagnostics.DiagnosticUploader
-import com.pyla.ai.diagnostics.HttpUrlDiagnosticTransport
-import com.pyla.ai.diagnostics.SubmissionStatus
+import com.pyla.ai.diagnostics.DiagnosticSnapshot
+import java.io.File
 import kotlinx.coroutines.delay
 
 /**
- * One coordinator per process, owned by the Application scope rather than by any
- * Activity. A configuration change or Activity recreation re-attaches to the
- * same coordinator, so the frozen snapshot and an in-flight upload are never
- * duplicated and nothing is ever re-confirmed implicitly.
- */
-object DiagnosticPanelController {
-    @Volatile
-    private var coordinator: DiagnosticSubmissionCoordinator? = null
-
-    fun get(): DiagnosticSubmissionCoordinator {
-        coordinator?.let { return it }
-        return synchronized(this) {
-            coordinator ?: buildCoordinator().also { coordinator = it }
-        }
-    }
-
-    private fun buildCoordinator(): DiagnosticSubmissionCoordinator =
-        DiagnosticSubmissionCoordinator(
-            snapshotProvider = { DiagnosticLog.snapshot() },
-            uploaderProvider = { defaultUploader() },
-        )
-
-    internal fun resetForTest() {
-        synchronized(this) { coordinator?.close(); coordinator = null }
-    }
-}
-
-private val privateDiagnosticTransport by lazy { HttpUrlDiagnosticTransport() }
-
-private fun defaultUploader(): DiagnosticUploader? {
-    val url = BuildConfig.DIAGNOSTIC_URL
-    val token = BuildConfig.DIAGNOSTIC_UPLOAD_TOKEN
-    if (url.isBlank() || token.isBlank()) return null
-    return runCatching {
-        DiagnosticUploader(
-            config = DiagnosticUploadConfig(
-                endpoint = url,
-                uploadToken = token,
-                appVersion = BuildConfig.VERSION_NAME,
-                appVersionCode = BuildConfig.VERSION_CODE,
-                androidApi = android.os.Build.VERSION.SDK_INT,
-            ),
-            transport = privateDiagnosticTransport,
-        )
-    }.getOrNull()
-}
-
-/**
- * Event Log card: a bounded recent-log view plus the consent-gated
- * `Sent Log` button, its `Confirm`/`Cancel` dialog and a truthful status line.
+ * Event Log card: a bounded recent-log view plus local export. The app has no network access;
+ * the redacted report only leaves the device as a file the user saves or shares themselves.
  */
 @Composable
 fun DiagnosticPanel(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val coordinator = remember { DiagnosticPanelController.get() }
     var lines by remember { mutableStateOf<List<String>>(emptyList()) }
-    var pending by remember { mutableStateOf<ConsentRequest?>(null) }
-    var status by remember { mutableStateOf<SubmissionStatus>(SubmissionStatus.Idle) }
+    var status by remember { mutableStateOf<ExportStatus>(ExportStatus.Idle) }
+    // Frozen when the user presses Save, so the file holds what was on screen at that moment
+    // even though the system file picker returns later.
+    var pendingSave by remember { mutableStateOf<DiagnosticSnapshot?>(null) }
 
-    // Low-rate periodic refresh. Only bounded line copies and a cheap state read
-    // happen here; snapshot serialization and network I/O run on the worker.
+    val saveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(DiagnosticExport.MIME_TYPE),
+    ) { uri: Uri? ->
+        val snapshot = pendingSave
+        pendingSave = null
+        status = when {
+            uri == null || snapshot == null -> ExportStatus.Idle // picker cancelled: nothing written
+            saveTo(context, uri, snapshot) -> ExportStatus.Saved
+            else -> ExportStatus.Failed
+        }
+    }
+
+    // Low-rate periodic refresh of bounded line copies only.
     LaunchedEffect(Unit) {
         while (true) {
             lines = DiagnosticLog.recentLines(RECENT_LINE_LIMIT)
-            status = coordinator.status()
-            // Restore-after-recreate: a dialog that is still awaiting a decision
-            // reappears with the SAME frozen snapshot and token. This never
-            // confirms anything by itself - the user must still press Confirm.
-            val live = coordinator.consentState()
-            val restored = if (live is ConsentState.AwaitingConsent) {
-                ConsentRequest(live.token, live.snapshot.reportId, live.snapshot.byteCount)
-            } else {
-                null
-            }
-            if (pending?.token != restored?.token) pending = restored
             delay(REFRESH_MILLIS)
         }
     }
@@ -159,121 +107,85 @@ fun DiagnosticPanel(modifier: Modifier = Modifier) {
             }
         }
         Spacer(Modifier.height(10.dp))
-        SecondaryButton(
-            label = "Sent Log",
-            icon = null,
-            accent = PylaColors.Blue,
-            enabled = status !is SubmissionStatus.Sending,
-            onClick = {
-                lines = DiagnosticLog.recentLines(RECENT_LINE_LIMIT)
-                // A null result means a dialog is already open or an attempt is
-                // in flight. Never clobber an open dialog in that case; it stays
-                // bound to its own frozen snapshot and token.
-                val opened = coordinator.requestConsent()
-                if (opened != null) pending = opened
-                status = coordinator.status()
-            },
-            modifier = Modifier.fillMaxWidth(),
-        )
+        Row(modifier = Modifier.fillMaxWidth()) {
+            SecondaryButton(
+                label = "Save log",
+                icon = Icons.Default.Save,
+                accent = PylaColors.Blue,
+                onClick = {
+                    lines = DiagnosticLog.recentLines(RECENT_LINE_LIMIT)
+                    status = ExportStatus.Idle
+                    val snapshot = DiagnosticLog.snapshot()
+                    pendingSave = snapshot
+                    runCatching { saveLauncher.launch(DiagnosticExport.fileName(System.currentTimeMillis())) }
+                        .onFailure { pendingSave = null; status = ExportStatus.Failed }
+                },
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(8.dp))
+            SecondaryButton(
+                label = "Share log",
+                icon = Icons.Default.Share,
+                accent = PylaColors.Blue,
+                onClick = {
+                    lines = DiagnosticLog.recentLines(RECENT_LINE_LIMIT)
+                    status = if (share(context, DiagnosticLog.snapshot())) ExportStatus.Idle else ExportStatus.Failed
+                },
+                modifier = Modifier.weight(1f),
+            )
+        }
         Spacer(Modifier.height(6.dp))
-        when (val s = status) {
-            is SubmissionStatus.Idle -> Unit
-            is SubmissionStatus.Sending ->
-                Text("Sending diagnostic log…", color = PylaColors.TextMed, fontSize = 12.sp)
-            is SubmissionStatus.Failed ->
-                Text(s.reason, color = PylaColors.Red, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            is SubmissionStatus.Submitted -> {
+        Text(
+            "The redacted log is written to a file. Nothing leaves this device unless you send " +
+                "that file yourself; review it before posting it publicly.",
+            color = PylaColors.TextLow,
+            fontSize = 11.sp,
+        )
+        when (status) {
+            ExportStatus.Idle -> Unit
+            ExportStatus.Saved -> {
+                Spacer(Modifier.height(4.dp))
+                Text("Log saved", color = PylaColors.Green, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+            ExportStatus.Failed -> {
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    "Log submitted",
-                    color = PylaColors.Green,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    "The log could not be exported. It is still here; try again.",
+                    color = PylaColors.Red, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                 )
-                Spacer(Modifier.height(2.dp))
-                val reference = DiagnosticReportReference.fromReportId(s.reportId)
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        reference,
-                        color = PylaColors.TextMed,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    TextButton(
-                        onClick = { copyReportId(context, reference) },
-                        modifier = Modifier.align(Alignment.End),
-                    ) {
-                        Icon(
-                            Icons.Default.ContentCopy,
-                            contentDescription = null,
-                            tint = PylaColors.Blue,
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text("Copy ID", color = PylaColors.Blue, fontSize = 12.sp)
-                    }
-                }
             }
         }
     }
-
-    val request = pending
-    if (request != null) {
-        AlertDialog(
-            onDismissRequest = {
-                // Back and outside-touch consume the consent atomically and send
-                // nothing; a later callback can never confirm this snapshot.
-                coordinator.dismiss(request.token)
-                pending = null
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val token = request.token
-                    pending = null
-                    if (coordinator.confirm(token)) status = SubmissionStatus.Sending
-                    else status = coordinator.status()
-                }) { Text("Confirm") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    coordinator.cancel(request.token)
-                    pending = null
-                }) { Text("Cancel") }
-            },
-            title = { Text("Submit diagnostic log?", color = PylaColors.TextHigh) },
-            text = {
-                Column {
-                    Text(
-                        "Your redacted PylaAndroid event log, app version, Android API level, " +
-                            "device model, screen size and CPU/RAM class are sent to " +
-                            "pyla-logs.fetzi-ai.de and stored on Cloudflare. " +
-                            "Reports expire after 7 days. Anyone with your report ID can view " +
-                            "the report after human verification; review it before sharing the ID.",
-                        color = PylaColors.TextMed,
-                        fontSize = 13.sp,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Report ${request.reportId} · ${request.byteCount} bytes. " +
-                            "Nothing is sent until you confirm.",
-                        color = PylaColors.TextLow,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                    )
-                }
-            },
-            containerColor = PylaColors.Surface,
-        )
-    }
 }
 
-/** Copies the exact report ID. Its holder may read the report through the public
- * viewer after human verification; never imply that the ID is safe to post publicly. */
-private fun copyReportId(context: Context, reportId: String) {
-    runCatching {
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("Pyla diagnostic report ID", reportId))
+private enum class ExportStatus { Idle, Saved, Failed }
+
+/** Writes the frozen snapshot to the document the user picked. No message or path is logged. */
+private fun saveTo(context: Context, uri: Uri, snapshot: DiagnosticSnapshot): Boolean = try {
+    val stream = context.contentResolver.openOutputStream(uri, "wt") ?: throw IllegalStateException("no stream")
+    stream.use { DiagnosticExport.write(snapshot, it) }
+    true
+} catch (_: Throwable) {
+    false
+}
+
+/**
+ * Hands the snapshot to the system share sheet as a file from the app cache, readable only by the
+ * app the user picks. Returns false when the file or the share sheet is unavailable.
+ */
+private fun share(context: Context, snapshot: DiagnosticSnapshot): Boolean = try {
+    val file = DiagnosticExport.writeShareFile(File(context.cacheDir, "diagnostics"), snapshot, System.currentTimeMillis())
+    val uri = FileProvider.getUriForFile(context, context.packageName + ".diagnostics", file)
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = DiagnosticExport.MIME_TYPE
+        putExtra(Intent.EXTRA_STREAM, uri)
+        clipData = ClipData.newRawUri(file.name, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
+    context.startActivity(Intent.createChooser(send, "Share diagnostic log").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    true
+} catch (_: Throwable) {
+    false
 }
 
 private const val RECENT_LINE_LIMIT = 80

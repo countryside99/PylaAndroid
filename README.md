@@ -72,16 +72,16 @@ Since `v4.1.0` the app adapts to the screen layout and measures the device befor
 - The game language must be **English**.
 - APKs contain `arm64-v8a` and `x86_64` libraries only.
 - On slow devices a loop takes roughly 0.7–1.1 s; the bot reacts late there.
-- If it does not work on your device, send a diagnostic report from the app and include the report ID in a bug report. Reports contain the device model, screen and capture size, which is what we need to fix it. See [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) for the current limits.
+- If it does not work on your device, export the diagnostic log from the app (**Save log** or **Share log**) and attach the file to a bug report. Reports contain the device model, screen and capture size, which is what we need to fix it. See [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) for the current limits.
 
 # Can I use on Emulator?
 Yes! You can use **PylaAndroid's APK** also directly on your android **emulator**!
 
 # Diagnostics
 
-PylaAndroid can prepare a diagnostic report to help diagnose problems. Upload is **opt-in**: you must confirm consent before anything is uploaded. Reports are redacted and are intended to exclude screenshots, raw OCR text and credentials — this is the design intent, not a promise that a report can never contain anything sensitive. Full details live in [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md).
+PylaAndroid can export a diagnostic report to help diagnose problems. The app has no network access and uploads nothing: the report is a text file that you save or share yourself. Reports are redacted and are intended to exclude screenshots, raw OCR text and credentials — this is the design intent, not a promise that a report can never contain anything sensitive. Full details live in [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md).
 
-> Sharing a report ID publicly may allow others to read it; review before posting.
+> The report is plain text. Review the file before posting it publicly.
 
 # Credits
 **Developers of original project:**

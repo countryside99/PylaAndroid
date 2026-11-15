@@ -93,12 +93,12 @@ body:
     validations:
       required: false
 
-  - type: input
-    id: diagnostic_id
+  - type: textarea
+    id: diagnostic_log
     attributes:
-      label: Pyla diagnostic report ID (optional)
+      label: Pyla diagnostic log (optional)
       description: >-
-        Optional. If you generated a diagnostic report, paste its ID here.
-        Sharing a report ID publicly may allow others to read it; review before posting.
+        Optional. Export the log in the app (Event log > Save log or Share log) and drag the
+        file into this field. Issues are public; review the file before posting.
     validations:
       required: false

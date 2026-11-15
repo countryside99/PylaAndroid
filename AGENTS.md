@@ -70,16 +70,13 @@ measurements on a stated setup. Do not add heavy microbenchmarks to `app/src/tes
 that assert nothing or assert wall-clock time: they cost CI time, flake, and prove
 nothing.
 
-**Diagnostics and privacy.** Diagnostic uploads stay opt-in with visible consent.
-Never publish private credentials, tokens or raw private logs in code, issues or
-pull requests; uploads must remain authorized and sanitized. Treat report IDs as
-sensitive: anyone possessing an ID and passing Turnstile can read the report.
-Publishing an ID exposes that report; it is not account authentication or proof
-of who uploaded it.
+**Diagnostics and privacy.** The app has no network access and must not request the
+`INTERNET` permission; diagnostic reports leave the device only as a file the user
+saves or shares. Exported text must remain sanitized. Never publish private
+credentials, tokens or raw private logs in code, issues or pull requests.
 
 **Releases, versions and signing.** No change to `versionCode`/`versionName`,
-signing configuration, release build output, diagnostic upload URL or upload
-capability, or publishing workflow without explicit authorization in the request.
+signing configuration, release build output, or publishing workflow without explicit authorization in the request.
 
 **Repository hygiene.** This is a public repository: no secrets or API keys, no
 local machine paths or usernames in code, docs or config. Write documentation and
