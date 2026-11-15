@@ -59,6 +59,21 @@ success is not proof of gameplay behaviour. See the
 
 **Too lazy for playstyle builder and wanna use AI? Take a look at the [AGENTS.md](tools/playstyle-builder/AGENTS.md)**
 
+# Supported devices
+
+Since `v4.1.0` the app adapts to the screen layout and measures the device before a match instead of assuming one reference phone.
+
+| Layout | Status |
+| --- | --- |
+| 16:9 | Run on a cloud Android 13 instance (720p, slow CPU). |
+| About 19.5:9 to 20:9 | Run on a Galaxy S26 Ultra and on the cloud instance. |
+| 4:3 (tablets, unfolded foldables) | Run on the cloud instance only; no real tablet has been tested yet. |
+
+- The game language must be **English**.
+- APKs contain `arm64-v8a` and `x86_64` libraries only.
+- On slow devices a loop takes roughly 0.7–1.1 s; the bot reacts late there.
+- If it does not work on your device, send a diagnostic report from the app and include the report ID in a bug report. Reports contain the device model, screen and capture size, which is what we need to fix it. See [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) for the current limits.
+
 # Can I use on Emulator?
 Yes! You can use **PylaAndroid's APK** also directly on your android **emulator**!
 
