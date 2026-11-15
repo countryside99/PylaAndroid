@@ -44,4 +44,10 @@ class VideoScreenStateCuesTest {
             assertNotEquals("match",authority.menu(s,101,101).state)
         }
     }
+    @org.junit.Test fun gainedTrophiesHeadingCountsAsRank() {
+        org.junit.Assert.assertEquals("end_ranked",
+            VideoScreenStateCues.classify(setOf("rank_win", "result_trophy", "result_exit", "play_again")))
+        org.junit.Assert.assertEquals("result_preview", VideoScreenStateCues.classify(setOf("rank_win", "result_trophy")))
+        org.junit.Assert.assertNull(VideoScreenStateCues.classify(setOf("rank_win")))
+    }
 }

@@ -131,12 +131,53 @@ class CaptureService : Service() {
         }
     }
 
+    /**
+     * Current logical size of the default display in its *current* rotation.
+     *
+     * Read from the DisplayManager's display object: a Service is a non-visual context, and the
+     * WindowManager it hands out can keep reporting the orientation the app process was started
+     * in. That left the capture in portrait after the game rotated to landscape on a device where
+     * the bot was started from the portrait app screen.
+     */
     private fun realDisplaySize(): Pair<Int, Int> {
         val metrics = android.util.DisplayMetrics()
+        try {
+            val display = (getSystemService(Context.DISPLAY_SERVICE) as DisplayManager)
+                .getDisplay(Display.DEFAULT_DISPLAY)
+            if (display != null) {
+                @Suppress("DEPRECATION")
+                display.getRealMetrics(metrics)
+                if (metrics.widthPixels > 1 && metrics.heightPixels > 1) {
+                    return metrics.widthPixels to metrics.heightPixels
+                }
+            }
+        } catch (_: Throwable) { }
         @Suppress("DEPRECATION")
         (getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager)
             .defaultDisplay.getRealMetrics(metrics)
         return metrics.widthPixels.coerceAtLeast(1) to metrics.heightPixels.coerceAtLeast(1)
+    }
+
+    /** Re-reads the display geometry and follows it. Safe to call repeatedly. */
+    private fun syncDisplayGeometry() {
+        if (projection == null) return
+        val (rw, rh) = realDisplaySize()
+        InputCoordinates.setScreenSize(rw, rh)
+        val (cw, ch) = captureSizeFor(rw, rh)
+        applySize(cw, ch)
+    }
+
+    /**
+     * Safety net for devices that do not deliver (or deliver early) the display-changed callback:
+     * the geometry is re-checked on a slow timer for as long as a projection is active.
+     */
+    private val geometryPoll = object : Runnable {
+        override fun run() {
+            try { syncDisplayGeometry() } catch (t: Throwable) {
+                DiagnosticLog.failure("capture", "geometry_poll", "threw", t)
+            }
+            if (projection != null) handler.postDelayed(this, GEOMETRY_POLL_MS)
+        }
     }
 
     private fun captureSizeFor(rw: Int, rh: Int): Pair<Int, Int> {
@@ -152,10 +193,7 @@ class CaptureService : Service() {
         override fun onDisplayRemoved(displayId: Int) {}
         override fun onDisplayChanged(displayId: Int) {
             if (displayId != Display.DEFAULT_DISPLAY) return
-            val (rw, rh) = realDisplaySize()
-            InputCoordinates.setScreenSize(rw, rh)
-            val (cw, ch) = captureSizeFor(rw, rh)
-            applySize(cw, ch)
+            syncDisplayGeometry()
         }
     }
 
@@ -167,6 +205,11 @@ class CaptureService : Service() {
         val newReader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
         newReader.setOnImageAvailableListener(imageListener, handler)
         try {
+            // Detach the old surface before resizing. Resizing with the old-size surface still
+            // attached was observed (Android 13) to leave the mirror in its previous portrait
+            // layout: the landscape game then appeared as a small letterboxed strip inside the
+            // new buffer and no screen was recognised for the rest of the session.
+            virtualDisplay?.surface = null
             virtualDisplay?.resize(w, h, resources.displayMetrics.densityDpi)
             virtualDisplay?.surface = newReader.surface
         } catch (t: Throwable) {
@@ -214,7 +257,13 @@ class CaptureService : Service() {
         InputCoordinates.setCaptureSize(width, height)
         (getSystemService(Context.DISPLAY_SERVICE) as DisplayManager)
             .registerDisplayListener(displayListener, handler)
+        handler.removeCallbacks(geometryPoll)
+        handler.postDelayed(geometryPoll, GEOMETRY_POLL_MS)
         DiagnosticLog.event("capture.started", "size=${width}x$height")
+        try {
+            DiagnosticLog.setDeviceProfile(
+                com.pyla.ai.engine.DeviceProfile.diagnosticProfile(realW, realH, width, height))
+        } catch (_: Throwable) { }
         Log.i(TAG, "Capture started ${width}x${height}")
     }
 
@@ -269,6 +318,7 @@ class CaptureService : Service() {
 
     @Synchronized
     private fun stopCapture() {
+        handler.removeCallbacks(geometryPoll)
         try {
             (getSystemService(Context.DISPLAY_SERVICE) as DisplayManager)
                 .unregisterDisplayListener(displayListener)
@@ -307,6 +357,7 @@ class CaptureService : Service() {
         const val EXTRA_WIDTH = "width"
         const val EXTRA_HEIGHT = "height"
         const val MAX_CAPTURE_HEIGHT = 720
+        private const val GEOMETRY_POLL_MS = 500L
 
         private val handler by lazy {
             android.os.Handler(android.os.HandlerThread("pyla-image-reader").apply { start() }.looper)

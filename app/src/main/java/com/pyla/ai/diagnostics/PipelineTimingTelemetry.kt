@@ -65,7 +65,12 @@ object PipelineTimingTelemetry {
             val value = nowMs()
             if (value < 0L) throw IllegalStateException("clock unavailable") else value
         },
-        sink = { kind, detail -> DiagnosticLog.event(kind, detail) },
+        sink = { kind, detail ->
+            DiagnosticLog.event(kind, detail)
+            // Mirror the bounded 5 s summaries to Logcat so a slow device can be diagnosed
+            // without submitting a report. Numbers only; never throws into the pipeline.
+            try { android.util.Log.i("PylaTiming", "$kind $detail") } catch (_: Throwable) { }
+        },
     )
 
     /** Monotonic milliseconds, or -1 when the platform clock is unavailable. Never throws. */

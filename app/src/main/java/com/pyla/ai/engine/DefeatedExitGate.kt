@@ -1,7 +1,11 @@
 package com.pyla.ai.engine
 
-/** Fresh visible-control authority for EXIT only; it never grants gameplay or presses PLAY. */
+/**
+ * Fresh visible-control authority for EXIT only; it never grants gameplay or presses PLAY.
+ * [screen] is the positively classified screen whose EXIT this gate guards.
+ */
 class DefeatedExitGate(
+    private val screen: String = "defeated",
     private val maxAgeMs: Long = 3_000L,
     private val retryIntervalMs: Long = 1_000L,
     private val maxAttempts: Int = 3,
@@ -34,7 +38,7 @@ class DefeatedExitGate(
 
     /** Unknown revokes evidence but does not create an unlimited retry budget. */
     @Synchronized fun screenChanged(state: String?) {
-        if (state == "defeated") return
+        if (state == screen) return
         previous = null; active = null
         if (state == "lobby" || state == "match") {
             attempts = 0; lastAttemptAt = 0L

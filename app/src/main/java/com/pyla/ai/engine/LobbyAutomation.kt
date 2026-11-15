@@ -15,6 +15,7 @@ import com.pyla.ai.diagnostics.DiagnosticLog
 import org.json.JSONObject
 import org.opencv.core.Mat
 import org.opencv.core.Rect
+import org.opencv.imgproc.Imgproc
 import java.util.concurrent.TimeUnit
 
 class BrawlerSelectionFailedException(val reason: String) : IllegalStateException("Brawler selection failed ($reason)")
@@ -79,20 +80,26 @@ class LobbyAutomation(
      * 40 ms hold are unchanged from the PC parity path.
      */
     fun checkForIdle(frame: Mat, guard: () -> Boolean = EngineSessionAuthority.DENY) {
-        val hr = windowController.heightRatio
-        if (hr <= 0f) return
         val w = frame.cols(); val h = frame.rows()
+        if (w <= 0 || h <= 0) return
+        // The dialog is centred on every aspect ratio and follows the game's UI scale.
+        val hr = com.pyla.ai.capture.UiLayout.unit(w, h).toFloat()
+        if (hr <= 0f) return
+        fun mapY(base: Int) = com.pyla.ai.capture.UiLayout.y(base.toDouble(), w, h).toFloat()
         val xStart = centerX(460, w, hr).toInt().coerceIn(0, w)
         val xEnd = centerX(1460, w, hr).toInt().coerceIn(0, w)
-        val yStart = (400 * hr).toInt().coerceIn(0, h)
-        val yEnd = (675 * hr).toInt().coerceIn(0, h)
+        val yStart = mapY(400).toInt().coerceIn(0, h)
+        val yEnd = mapY(675).toInt().coerceIn(0, h)
         if (xEnd <= xStart || yEnd <= yStart) return
         val cropped = Mat(frame, Rect(xStart, yStart, xEnd - xStart, yEnd - yStart))
         // Same HSV window as the PC version (lobby_automation.check_for_idle): the dark,
         // low-saturation dim overlay shown behind the in-match inactivity dialog.
-        val gray = PylaUtils.countHsvPixels(cropped, doubleArrayOf(0.0, 0.0, 10.0), doubleArrayOf(30.0, 60.0, 67.0))
-        cropped.release()
-        val threshold = grayPixelsThreshold * windowController.widthRatio * windowController.heightRatio
+        val threshold = grayPixelsThreshold * (w / 1920f) * (h / 1080f) *
+            if (com.pyla.ai.capture.UiLayout.isNarrow(w, h)) hr / (h / 1080f) else 1f
+        val gray = try {
+            val legacy = PylaUtils.countHsvPixels(cropped, doubleArrayOf(0.0, 0.0, 10.0), doubleArrayOf(30.0, 60.0, 67.0))
+            if (legacy > threshold) legacy else flatDarkDialogPixels(cropped, threshold.toDouble())
+        } finally { cropped.release() }
         if (verboseDebug) Log.i(TAG, "gray=$gray (threshold=${threshold.toInt()})")
         if (gray > threshold) {
             val btn = buttonsConfig().getIntArray("idle_reconnect")
@@ -104,8 +111,32 @@ class LobbyAutomation(
             if (!guard()) return
             Log.i(TAG, "Idle detected (gray=$gray), reconnecting at ($bx,$by)")
             BotStatus.action("Idle popup detected, reconnecting")
-            windowController.guardedNavigationTap(centerX(bx, w, hr), by * hr, guard)
+            windowController.guardedNavigationTap(centerX(bx, w, hr), mapY(by), guard)
         }
+    }
+
+    /**
+     * The inactivity dialog is a system dialog, so its surface colour follows the device theme.
+     * The PC hue window (0-30) only matches a neutral or warm grey: on an Android 13 device with a
+     * cool-tinted dark theme the surface is RGB (26,28,30), hue 105, and the dialog was never
+     * seen. Hue carries no information at this darkness and saturation, so any hue is accepted
+     * here - but only for a flat surface: measured 87k matching pixels with a brightness spread
+     * of 3.3 on the dialog, against at most 2.4k pixels (spread 15-17) on 140 other frames.
+     * Returns 0 unless the surface is flat, so the caller's threshold comparison stays as is.
+     */
+    private fun flatDarkDialogPixels(cropped: Mat, threshold: Double): Int {
+        val hsv = Mat(); val mask = Mat()
+        val mean = org.opencv.core.MatOfDouble(); val deviation = org.opencv.core.MatOfDouble()
+        return try {
+            Imgproc.cvtColor(cropped, hsv, Imgproc.COLOR_RGB2HSV)
+            org.opencv.core.Core.inRange(hsv, org.opencv.core.Scalar(0.0, 0.0, 10.0),
+                org.opencv.core.Scalar(180.0, 60.0, 67.0), mask)
+            val count = org.opencv.core.Core.countNonZero(mask)
+            if (count <= threshold) return 0
+            org.opencv.core.Core.meanStdDev(hsv, mean, deviation, mask)
+            val spread = deviation.toArray().getOrNull(2) ?: return 0
+            if (spread.isFinite() && spread <= FLAT_DIALOG_BRIGHTNESS_SPREAD) count else 0
+        } catch (_: Exception) { 0 } finally { hsv.release(); mask.release(); mean.release(); deviation.release() }
     }
 
     private fun cleanName(raw: String): String = BrawlerSelectionGate.normalize(raw)
@@ -684,6 +715,7 @@ class LobbyAutomation(
      */
     private fun confirmDetailSelect(names: Set<String>, deadline: Long, detailDeadline: Long): DetailConfirm {
         var attempt = 0
+        var identityAttempt = 0
         while (true) {
             // Authority/cancellation and a spent phase stay terminal, never an unbounded wait.
             if (cancelled()) return DetailConfirm.Denied
@@ -693,7 +725,18 @@ class LobbyAutomation(
             val select = confirmedSelect(detail)
             if (title == null || title.right > detail.second.width * 0.65 || select == null ||
                 select.right > detail.second.width * 0.65
-            ) return DetailConfirm.Rejected
+            ) {
+                // A pair can form while the detail page is still sliding in: SELECT is already
+                // readable, the title not yet. A user report showed exactly this - rejected 0.9 s
+                // after the card click, which stopped the bot. Nothing has been clicked for this
+                // pair, so re-observing a NEW pair inside the same finite phase stays fail-closed;
+                // a title that never becomes the unique target still ends as Rejected.
+                identityAttempt++
+                if (identityAttempt >= MAX_DETAIL_IDENTITY_ATTEMPTS) return DetailConfirm.Rejected
+                DiagnosticLog.event("selection.detail", "reason=identity_retry")
+                if (!waitStep(SCAN_INTERVAL_MS, detailDeadline)) return DetailConfirm.Rejected
+                continue
+            }
             val windows = BrawlerDetailStability.windows(
                 detail.second.width, detail.second.height, title, select,
             ) ?: return DetailConfirm.Rejected
@@ -1246,9 +1289,9 @@ class LobbyAutomation(
             } else {
                 // Retain the existing opening-only point, never as a card/Select fallback.
                 val btn = lobbyConfig().getIntArray("lobby.brawler_btn")
-                val hr = second.height / 1080f
+                val hr = com.pyla.ai.capture.UiLayout.unit(second.width, second.height).toFloat()
                 x = (if (btn.size >= 2) btn[0] else 110) * hr
-                y = (if (btn.size >= 2) btn[1] else 490) * hr
+                y = com.pyla.ai.capture.UiLayout.y((if (btn.size >= 2) btn[1] else 490).toDouble(), second.width, second.height).toFloat()
                 bounds = LobbyMenuEntryGate.aroundPoint(second.width, second.height, x, y)
             }
             if (bounds == null) {
@@ -1473,6 +1516,7 @@ class LobbyAutomation(
 
     companion object {
         private const val TAG = "PylaLobby"
+        private const val FLAT_DIALOG_BRIGHTNESS_SPREAD = 8.0
         private const val FRAME_MAX_AGE_MS = 3_000L
         private const val MAX_SCROLL_PAGES = 40
         private const val PHASE_TIMEOUT_MS = 15_000L
@@ -1499,6 +1543,8 @@ class LobbyAutomation(
          * still ends the detail phase first. It only stops a path that made no clock progress.
          */
         private const val MAX_DETAIL_CONFIRM_ATTEMPTS = 3
+        /** Fresh control pairs tried before a missing/unfit detail identity becomes terminal. */
+        private const val MAX_DETAIL_IDENTITY_ATTEMPTS = 6
         /**
          * Bounded fresh-observation budget for the DETAIL control pair. Each attempt costs real
          * time (>= 2 fresh captures plus intervals), so the caller's finite detail phase deadline

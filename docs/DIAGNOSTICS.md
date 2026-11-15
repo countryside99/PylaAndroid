@@ -12,7 +12,7 @@ After a successful submission, the app exposes a `pyla-android-…` report refer
 
 ## Contents and privacy limits
 
-Reports contain bounded PylaAndroid process-session diagnostic events, the app version, Android API level and relevant technical metadata such as action outcomes and timing. Credential-like values are sanitized before log retention. The logger is designed not to collect screenshots, raw OCR output, unrelated device Logcat or stable device identifiers.
+Reports contain bounded PylaAndroid process-session diagnostic events, the app version, Android API level and relevant technical metadata such as action outcomes and timing. They also contain a compatibility line with the device manufacturer and model, CPU ABI, screen and capture resolution, CPU core count and RAM size; it is needed to reproduce device-specific failures and contains no serial number, Android ID, IMEI, account or network identifier. Credential-like values are sanitized before log retention. The logger is designed not to collect screenshots, raw OCR output, unrelated device Logcat or stable device identifiers.
 
 This is not a guarantee that arbitrary diagnostic text can never contain sensitive information. Review before submission or public sharing. Diagnostics do not grant game-control authority or silently restart gameplay.
 

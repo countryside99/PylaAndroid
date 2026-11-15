@@ -85,6 +85,26 @@ internal object TemplateAttackControl {
     internal const val RAW_PEAK_CAP = 4096
     internal const val TIMEOUT_NANOS = 400_000_000L
 
+    /**
+     * Upper bound of the adaptive wall budget. The search is a one-off cost: once it completes,
+     * the saved calibration removes repeated matching. On a slow CPU the full 21-scale search was
+     * measured at 440-530 ms, i.e. it exhausted the fixed 400 ms budget on every single frame,
+     * never produced a point and was repeated forever. A device that finishes inside
+     * [TIMEOUT_NANOS] never sees a different budget.
+     */
+    internal const val MAX_TIMEOUT_NANOS = 1_600_000_000L
+
+    @Volatile
+    private var budgetNanos: Long = TIMEOUT_NANOS
+
+    /** Doubles the budget after a time exhaustion, bounded by [MAX_TIMEOUT_NANOS]. */
+    internal fun escalatedBudget(current: Long): Long =
+        min(MAX_TIMEOUT_NANOS, max(TIMEOUT_NANOS, current) * 2)
+
+    internal fun currentBudgetNanos(): Long = budgetNanos
+
+    internal fun resetBudgetForTesting() { budgetNanos = TIMEOUT_NANOS }
+
     private const val MAX_FRAME_WIDTH = 960
     private const val MAX_FRAME_HEIGHT = 540
     private const val GAUSSIAN_SIGMA = 0.7
@@ -231,13 +251,21 @@ internal object TemplateAttackControl {
     fun detect(image: Mat): TemplateControlResult {
         val start = System.nanoTime()
         return try {
-            recognize(image, start)
+            val budget = budgetNanos
+            val first = recognize(image, start, budget)
+            // A time exhaustion has just widened the budget: use it on this same frame once, so
+            // a slow device does not lose a whole gameplay loop per widening step.
+            if (first.status == TemplateControlStatus.EXHAUSTED && budgetNanos > budget &&
+                !Thread.currentThread().isInterrupted) {
+                val second = recognize(image, System.nanoTime(), budgetNanos)
+                second.copy(nanos = System.nanoTime() - start)
+            } else first
         } catch (_: Exception) {
             TemplateControlResult(status = TemplateControlStatus.ERROR, nanos = System.nanoTime() - start)
         }
     }
 
-    private fun recognize(image: Mat, start: Long): TemplateControlResult {
+    private fun recognize(image: Mat, start: Long, budget: Long): TemplateControlResult {
         if (image.empty() || image.channels() != 3 || image.depth() != CvType.CV_8U) {
             return TemplateControlResult(status = TemplateControlStatus.ERROR, nanos = System.nanoTime() - start)
         }
@@ -301,7 +329,7 @@ internal object TemplateAttackControl {
             var timedOut = false
 
             for (entry in entries) {
-                if (Thread.currentThread().isInterrupted || System.nanoTime() - start > TIMEOUT_NANOS) { timedOut = true; break }
+                if (Thread.currentThread().isInterrupted || System.nanoTime() - start > budget) { timedOut = true; break }
                 if (entry.tx.rows() > regionX.rows() || entry.tx.cols() > regionX.cols()) continue
 
                 val n1 = Mat()
@@ -378,7 +406,10 @@ internal object TemplateAttackControl {
             }
 
             val nanos = System.nanoTime() - start
-            if (timedOut || overflow || Thread.currentThread().isInterrupted || nanos > TIMEOUT_NANOS) {
+            if (timedOut || overflow || Thread.currentThread().isInterrupted || nanos > budget) {
+                // Only a genuine time exhaustion widens the next attempt; an interrupt (STOP)
+                // or a candidate overflow says nothing about this device's speed.
+                if (!overflow && !Thread.currentThread().isInterrupted) budgetNanos = escalatedBudget(budget)
                 return TemplateControlResult(
                     status = TemplateControlStatus.EXHAUSTED,
                     candidates = raw.size,
@@ -402,7 +433,8 @@ internal object TemplateAttackControl {
                 }
             }
             val completeNanos = System.nanoTime() - start
-            if (Thread.currentThread().isInterrupted || completeNanos > TIMEOUT_NANOS) {
+            if (Thread.currentThread().isInterrupted || completeNanos > budget) {
+                if (!Thread.currentThread().isInterrupted) budgetNanos = escalatedBudget(budget)
                 return TemplateControlResult(status = TemplateControlStatus.EXHAUSTED,
                     candidates = kept.size, peakScore = peak, nanos = completeNanos)
             }

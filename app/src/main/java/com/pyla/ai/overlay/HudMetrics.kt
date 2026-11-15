@@ -11,7 +11,11 @@ package com.pyla.ai.overlay
  */
 object HudMetrics {
     const val EM_DASH = "\u2014"
-    const val MAX_MS = 999.0
+    /**
+     * Largest millisecond value shown as a number. It was 999, so a slow device whose loop takes
+     * about one second showed a constant ">999ms" instead of its real loop time.
+     */
+    const val MAX_MS = 9_999.0
     const val MAX_FRAME_AGE_MS = 9_999L
     const val MAX_IPS = 999.9
     const val STYLE_MAX_LENGTH = 12
@@ -26,7 +30,7 @@ object HudMetrics {
      */
     fun ms(value: Double?): String {
         val v = sane(value)?.takeIf { it >= 0.0 } ?: return EM_DASH
-        if (v > MAX_MS) return ">999ms"
+        if (v > MAX_MS) return ">9999ms"
         val clamped = v.coerceIn(0.0, MAX_MS)
         val number = if (clamped < 10.0) {
             val tenths = (clamped * 10.0).toLong() / 10.0
@@ -34,7 +38,8 @@ object HudMetrics {
         } else {
             Math.round(clamped).toString()
         }
-        return "$number ms"
+        // Four digits drop the space ("1123ms") so they fit the column reserved for "888 ms".
+        return if (clamped >= 999.5) "${number}ms" else "$number ms"
     }
 
     /** Frame age is a whole-millisecond Long measurement. */

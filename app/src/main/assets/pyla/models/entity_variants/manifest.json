@@ -1,0 +1,33 @@
+{
+ "schema": 1,
+ "source_sha256": "e9e2394ab3b65c92b88334a4ecc6675c054ee717c5fea9f35ad8f111ba13a9a4",
+ "weights": "entity_weights.bin",
+ "weights_sha256": "616da8a29ba765af11a72fd3f1fe80d37ccbc4342e359208edd7326377f434b9",
+ "weights_bytes": 10454080,
+ "variants": [
+  {
+   "file": "entity_640x384.onnx",
+   "width": 640,
+   "height": 384,
+   "anchors": 5040,
+   "sha256": "69c7f1bd34af31403ddac20e9afa1817fd44767ff416f96f28c7564875545b60",
+   "bytes": 215867
+  },
+  {
+   "file": "entity_512x288.onnx",
+   "width": 512,
+   "height": 288,
+   "anchors": 3024,
+   "sha256": "faafe556c36712c875a7d93c15e4a6c4749d8a1b95d3ce39c15c33fe886953d7",
+   "bytes": 175545
+  },
+  {
+   "file": "entity_448x256.onnx",
+   "width": 448,
+   "height": 256,
+   "anchors": 2352,
+   "sha256": "7e1ca3ed68183ea94f0f3632d7284bb399e85d3266a368bd230dcbc381934235",
+   "bytes": 162105
+  }
+ ]
+}

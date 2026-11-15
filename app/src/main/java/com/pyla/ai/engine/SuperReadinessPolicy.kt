@@ -21,10 +21,14 @@ class SuperReadinessPolicy private constructor(
         if (width <= 0 || height <= 0) return null
         val wr = width / 1920.0
         val hr = height / 1080.0
-        val s = height / 720.0
+        val s = com.pyla.ai.capture.UiLayout.unit(width, height, 720.0)
+        // The control cluster is pinned to the bottom-right corner; on frames narrower than 16:9
+        // it keeps its scaled distance from the bottom edge (identical mapping on 16:9 and wider).
+        val top = if (com.pyla.ai.capture.UiLayout.isNarrow(width, height)) height - (720.0 - 288.0) * s else 288.0 * s
+        val bottom = if (com.pyla.ai.capture.UiLayout.isNarrow(width, height)) height - (720.0 - 710.0) * s else 710.0 * s
         val bounds = if (region == null) {
-            Bounds((width - 624.0 * s).toInt().coerceAtLeast(0), (288.0 * s).toInt(),
-                (width - 10.0 * s).toInt().coerceAtLeast(0), (710.0 * s).toInt())
+            Bounds((width - 624.0 * s).toInt().coerceAtLeast(0), top.toInt().coerceAtLeast(0),
+                (width - 10.0 * s).toInt().coerceAtLeast(0), bottom.toInt())
         } else {
             Bounds(
                 minOf(region[0] * wr, width - (1920 - region[0]) * hr).toInt(),

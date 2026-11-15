@@ -128,6 +128,7 @@ object AttackButtonPixels {
         height: Int,
         rgb: ByteArray,
         metrics: AttackRecognitionMetrics?,
+        controlQuadrantOnly: Boolean = false,
     ): AttackButtonPoint? {
         if (width < 8 || height < 8) { metrics?.outcome = AttackRecognitionOutcome.INVALID_FRAME; return null }
         val pixels = width.toLong() * height.toLong()
@@ -142,7 +143,13 @@ object AttackButtonPixels {
         metrics?.opaqueNanos = System.nanoTime() - opaqueStart
         if (opaque.ambiguous) { metrics?.outcome = AttackRecognitionOutcome.OPAQUE_AMBIGUOUS; return null }
         val translucentStart = System.nanoTime()
-        val translucent = TranslucentAttackControl.find(width, height, rgb, scratch, metrics)
+        val found = TranslucentAttackControl.find(width, height, rgb, scratch, metrics)
+        // Calibration only: the attack control lives in the lower-right quadrant (the same region
+        // the template search is confined to). Warm ring-shaped world objects elsewhere - glowing
+        // crates were measured as two "controls" in the upper half of a 16:9 frame - are not
+        // competing controls and must not veto or contradict the real one.
+        val translucent = if (!controlQuadrantOnly) found else found.copy(
+            points = found.points.filter { it.x >= width / 2f && it.y >= height / 2f })
         metrics?.translucentNanos = System.nanoTime() - translucentStart
         if (translucent.exhausted || translucent.points.size > 1) {
             metrics?.outcome = if (translucent.exhausted) AttackRecognitionOutcome.TRANSLUCENT_EXHAUSTED

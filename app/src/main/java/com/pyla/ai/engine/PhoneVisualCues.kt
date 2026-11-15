@@ -24,8 +24,9 @@ object PhoneVisualCues {
         chaosGate.invalidate(SystemClock.elapsedRealtime(), expectedGeneration)
     }
 
-    private fun template(name: String, h: Int): Mat? {
-        val key = "$name:$h"
+    private fun template(name: String, w: Int, h: Int): Mat? {
+        val unit = com.pyla.ai.capture.UiLayout.unit(w, h, 720.0)
+        val key = "$name:$w:$h"
         templates[key]?.let { return it }
         return try {
             val bytes = PylaApp.ctx().assets.open("pyla/images/phone_feedback_cues/$name.png").use { it.readBytes() }
@@ -33,7 +34,7 @@ object PhoneVisualCues {
             val raw = try { Imgcodecs.imdecode(encoded, Imgcodecs.IMREAD_GRAYSCALE) } finally { encoded.release() }
             if (raw.empty()) { raw.release(); null } else {
                 val scaled = Mat()
-                try { Imgproc.resize(raw, scaled, Size((raw.cols() * h / 720.0).coerceAtLeast(1.0), (raw.rows() * h / 720.0).coerceAtLeast(1.0))) }
+                try { Imgproc.resize(raw, scaled, Size((raw.cols() * unit).coerceAtLeast(1.0), (raw.rows() * unit).coerceAtLeast(1.0))) }
                 finally { raw.release() }
                 templates[key] = scaled; scaled
             }
@@ -41,15 +42,16 @@ object PhoneVisualCues {
     }
     private data class Match(val score: Double, val x: Double, val y: Double)
     private fun match(gray: Mat, name: String, x0: Double, y0: Double, x1: Double, y1: Double): Match? {
-        val scale = gray.rows() / 720.0
+        val scale = com.pyla.ai.capture.UiLayout.unit(gray.cols(), gray.rows(), 720.0)
         val left = (x0 * scale).toInt().coerceIn(0, gray.cols())
         val right = (x1 * scale).toInt().coerceIn(0, gray.cols())
-        val top = (y0 * scale).toInt().coerceIn(0, gray.rows())
-        val bottom = (y1 * scale).toInt().coerceIn(0, gray.rows())
+        val topEdge = com.pyla.ai.capture.UiLayout.top(y0, y1 - y0, gray.cols(), gray.rows(), 720.0)
+        val top = topEdge.toInt().coerceIn(0, gray.rows())
+        val bottom = (topEdge + (y1 - y0) * scale).toInt().coerceIn(0, gray.rows())
         return match(gray, name, SuperReadinessPolicy.Bounds(left, top, right, bottom))
     }
     private fun match(gray: Mat, name: String, bounds: SuperReadinessPolicy.Bounds): Match? {
-        val t = template(name, gray.rows()) ?: return null
+        val t = template(name, gray.cols(), gray.rows()) ?: return null
         val (left, top, right, bottom) = bounds
         if (right-left < t.cols() || bottom-top < t.rows()) return null
         val crop = Mat(gray, Rect(left,top,right-left,bottom-top)); val scores = Mat()
@@ -63,7 +65,7 @@ object PhoneVisualCues {
         if (image.empty() || image.channels()!=3) return null
         val bounds = policy?.searchBounds(image.cols(), image.rows()) ?: return null
         val gray=Mat(); Imgproc.cvtColor(image,gray,Imgproc.COLOR_RGB2GRAY)
-        val s=image.rows()/720.0
+        val s=com.pyla.ai.capture.UiLayout.unit(image.cols(), image.rows(), 720.0)
         val m=try {
             listOf("super_ready_skull", "super_ready_skull_active", "super_ready_skull_pulse")
                 .mapNotNull { match(gray,it,bounds) }.maxByOrNull { it.score }
@@ -87,7 +89,7 @@ object PhoneVisualCues {
     ): Boolean {
         if (image.empty() || image.channels()!=3) return false
         val gray=Mat();Imgproc.cvtColor(image,gray,Imgproc.COLOR_RGB2GRAY)
-        val s=image.rows()/720.0;val center=image.cols()/s/2.0
+        val s=com.pyla.ai.capture.UiLayout.unit(image.cols(), image.rows(), 720.0);val center=image.cols()/s/2.0
         return try {
             val header=match(gray,"chaos_daily_wins",0.0,0.0,600.0,140.0)?.score ?: 0.0
             val face=if(header>0.90) listOf("rare","super_rare","epic").maxOf { match(gray,"chaos_face_$it",center-280.0,220.0,center+300.0,600.0)?.score ?: 0.0 } else 0.0
@@ -96,8 +98,67 @@ object PhoneVisualCues {
             else if(chaosGeneration != null && chaosGate.continues(chaosGeneration, nowMs, size(image), capturedAtMs)) {
                 val title=match(gray,"chaos_reward_coins_title",center-330.0,30.0,center+340.0,210.0)?.score ?: 0.0
                 val coin=match(gray,"chaos_reward_coin_icon",center-260.0,330.0,center+160.0,600.0)?.score ?: 0.0
-                title>0.90 && coin>0.90
+                (title>0.90 && coin>0.90) || isRewardReveal(image)
             } else false
         } finally { gray.release() }
     }
+
+    /**
+     * Generic reward-reveal screen: one saturated hue fills the whole outer frame band.
+     *
+     * The coins templates above only recognise one of many rewards; a Starr Drop that revealed
+     * Power Points left the bot on the reward screen for good. Every reveal shares the plain
+     * single-hue radial background, measured at 0.995 of the outer band on a Power Points reveal,
+     * against at most 0.71 on lobby, match, result, elimination and dialog frames and 0.87 on the
+     * drop artwork itself. Only consulted inside the armed continuation, i.e. within seconds of
+     * positively observed drop artwork, so it can never classify an arbitrary screen.
+     */
+    internal fun isRewardReveal(image: Mat): Boolean {
+        val w = image.cols(); val h = image.rows()
+        val band = (h * 0.12).toInt()
+        if (band < 4 || w <= 2 * band || h <= 2 * band) return false
+        val strips = listOf(
+            Rect(0, 0, w, band), Rect(0, h - band, w, band),
+            Rect(0, band, band, h - 2 * band), Rect(w - band, band, band, h - 2 * band),
+        )
+        val hsvStrips = ArrayList<Mat>(4)
+        return try {
+            val histogram = LongArray(180)
+            var total = 0L
+            for (strip in strips) {
+                // Every 4th pixel in both directions is ample for a flat background and keeps
+                // this check, which runs on every unclassified frame, cheap.
+                val roi = Mat(image, strip); val small = Mat(); val hsv = Mat()
+                try {
+                    Imgproc.resize(roi, small, Size((strip.width / 4).coerceAtLeast(1).toDouble(),
+                        (strip.height / 4).coerceAtLeast(1).toDouble()), 0.0, 0.0, Imgproc.INTER_NEAREST)
+                    Imgproc.cvtColor(small, hsv, Imgproc.COLOR_RGB2HSV)
+                } finally { roi.release(); small.release() }
+                hsvStrips += hsv
+                val bytes = ByteArray(hsv.rows() * hsv.cols() * 3)
+                hsv.get(0, 0, bytes)
+                var i = 0
+                while (i < bytes.size) { histogram[(bytes[i].toInt() and 0xFF).coerceAtMost(179)]++; i += 3 }
+                total += bytes.size / 3
+            }
+            if (total == 0L) return false
+            var seen = 0L; var median = 0
+            while (median < 179 && seen + histogram[median] < (total + 1) / 2) { seen += histogram[median]; median++ }
+            var matching = 0L
+            for (hsv in hsvStrips) {
+                val bytes = ByteArray(hsv.rows() * hsv.cols() * 3)
+                hsv.get(0, 0, bytes)
+                var i = 0
+                while (i < bytes.size) {
+                    val hue = bytes[i].toInt() and 0xFF
+                    val distance = kotlin.math.abs(hue - median).let { minOf(it, 180 - it) }
+                    if (distance <= 10 && (bytes[i + 1].toInt() and 0xFF) >= 100 && (bytes[i + 2].toInt() and 0xFF) >= 60) matching++
+                    i += 3
+                }
+            }
+            matching.toDouble() / total >= REWARD_REVEAL_BAND_FRACTION
+        } catch (_: Exception) { false } finally { hsvStrips.forEach { it.release() } }
+    }
+
+    private const val REWARD_REVEAL_BAND_FRACTION = 0.95
 }

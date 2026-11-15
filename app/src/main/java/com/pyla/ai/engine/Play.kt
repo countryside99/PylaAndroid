@@ -61,6 +61,9 @@ class Play(
         /** Rate limit for reporting the observed screen back to the engine. */
         private const val STATE_REPORT_INTERVAL_MS = 1_000L
 
+        /** In-match entity inferences observed before a cheaper model canvas is considered. */
+        private const val ENTITY_TIER_SAMPLES = 6
+
         /** Fixed reason for a staged persistence/context snapshot that could not be isolated. */
         private const val PERSISTENCE_INVALID = "PERSISTENCE_INVALID"
     }
@@ -75,11 +78,124 @@ class Play(
 
     private val verboseDebug: Boolean get() = PylaUtils.configBool(PylaConfig.load("cfg/debug_settings.toml").opt("verbose_debug"), false)
 
-    private val detectMainInfo: Detect = Detect(
-        mainInfoModelPath,
-        classes = listOf("enemy", "teammate", "player"),
-        telemetryRole = PerceptionPerformanceTelemetry.ROLE_ENTITY,
-    )
+    /** Reduced-canvas variants still available below the one in use (most detailed first). */
+    private var cheaperEntityVariants: List<EntityModelVariants.Variant> = emptyList()
+    private var entityVariantDir: File? = null
+    private val entityInferenceSamples = ArrayList<Long>(ENTITY_TIER_SAMPLES)
+    private val entityModelPath: String = mainInfoModelPath
+    private var detectMainInfo: Detect = createEntityDetector(entityModelPath, tune = false)
+    private var inferenceTuned = false
+
+    /**
+     * Factory entity model: use the reduced-canvas variant that fits this capture geometry (same
+     * weights, no padding rows). A custom model, a geometry no variant fits or any installation
+     * problem keeps the original 640x640 model exactly as before. Cheaper variants are only
+     * adopted later, from inference times measured during real gameplay (see [adaptEntityTier]).
+     */
+    private fun createEntityDetector(modelPath: String, tune: Boolean): Detect {
+        val classes = listOf("enemy", "teammate", "player")
+        fun factory() = Detect(modelPath, classes = classes,
+            telemetryRole = PerceptionPerformanceTelemetry.ROLE_ENTITY, autoTune = tune)
+        try {
+            val resolved = File(modelPath).let { if (it.isAbsolute) it else PylaConfig.resolve(modelPath) }
+            if (!EntityModelVariants.isFactoryModel(resolved)) return factory()
+            // The game always renders in landscape; the engine may be created while the display
+            // is still showing the portrait app, so judge the fit on the landscape orientation.
+            val cw = InputCoordinates.captureWidth; val ch = InputCoordinates.captureHeight
+            val candidates = EntityModelVariants.candidates(maxOf(cw, ch), minOf(cw, ch))
+            if (candidates.isEmpty()) return factory()
+            val dir = EntityModelVariants.install(com.pyla.ai.PylaApp.ctx(), PylaConfig.root()) ?: return factory()
+            val detector = entityVariant(dir, candidates.first(), tune, null)
+            entityVariantDir = dir
+            cheaperEntityVariants = candidates.drop(1)
+            return detector
+        } catch (t: Throwable) {
+            DiagnosticLog.failure("engine", "entity_model", "variant_unavailable", t)
+            return factory()
+        }
+    }
+
+    private fun entityVariant(dir: File, variant: EntityModelVariants.Variant, tune: Boolean, threads: Int?): Detect {
+        val classes = listOf("enemy", "teammate", "player")
+        val detector = if (threads == null) Detect(File(dir, variant.file).absolutePath, classes = classes,
+            inputSize = variant.height to variant.width,
+            telemetryRole = PerceptionPerformanceTelemetry.ROLE_ENTITY, autoTune = tune)
+        else Detect(File(dir, variant.file).absolutePath, classes = classes,
+            inputSize = variant.height to variant.width, threads = threads,
+            telemetryRole = PerceptionPerformanceTelemetry.ROLE_ENTITY)
+        PylaLog.p(TAG, "entity model ${variant.width}x${variant.height} provider=${detector.activeProvider} " +
+            "threads=${detector.activeThreads}")
+        return detector
+    }
+
+    /**
+     * Measures threads/providers for both models on this device. Called once by the engine on the
+     * first verified lobby: the game has finished loading and loads the CPU about as it does in a
+     * match, whereas measurements taken during engine start-up compete with the game's own
+     * loading and were observed to be 5-10x inflated and unordered. Runs on the gameplay thread,
+     * so no inference is in flight. Any failure leaves the current sessions in place.
+     */
+    fun tuneInference() {
+        if (inferenceTuned) return
+        inferenceTuned = true
+        try {
+            val previous = detectMainInfo
+            val variantDir = entityVariantDir
+            detectMainInfo = if (variantDir != null) {
+                val cw = InputCoordinates.captureWidth; val ch = InputCoordinates.captureHeight
+                val candidates = EntityModelVariants.candidates(maxOf(cw, ch), minOf(cw, ch))
+                cheaperEntityVariants = candidates.drop(1)
+                // No reduced canvas fits this aspect ratio (e.g. 4:3): tune the full model
+                // instead of failing and keeping the untuned start-up session.
+                candidates.firstOrNull()?.let { entityVariant(variantDir, it, true, null) }
+                    ?: createEntityDetector(entityModelPath, tune = true)
+            } else createEntityDetector(entityModelPath, tune = true)
+            previous.close()
+            entityInferenceSamples.clear()
+        } catch (t: Throwable) {
+            DiagnosticLog.failure("engine", "tune", "entity_failed", t)
+        }
+        try {
+            val previous = detectTileDetector
+            if (previous != null) {
+                detectTileDetector = createTileDetector(tune = true)
+                previous.close()
+            }
+        } catch (t: Throwable) {
+            DiagnosticLog.failure("engine", "tune", "tile_failed", t)
+        }
+    }
+
+    /**
+     * Called with every real gameplay entity inference time. When the device cannot run the
+     * current canvas within [EntityModelVariants.BUDGET_MS] (median of the first
+     * [ENTITY_TIER_SAMPLES] in-match inferences), the next cheaper variant replaces it once per
+     * step. Runs on the gameplay thread between two inferences, so no inference is in flight.
+     */
+    private fun adaptEntityTier(inferenceMs: Long) {
+        val dir = entityVariantDir ?: return
+        if (cheaperEntityVariants.isEmpty()) return
+        entityInferenceSamples.add(inferenceMs)
+        if (entityInferenceSamples.size < ENTITY_TIER_SAMPLES) return
+        val median = entityInferenceSamples.sorted()[entityInferenceSamples.size / 2]
+        entityInferenceSamples.clear()
+        if (median <= EntityModelVariants.BUDGET_MS) { cheaperEntityVariants = emptyList(); return }
+        val next = cheaperEntityVariants.first()
+        try {
+            val replacement = entityVariant(dir, next, false, detectMainInfo.activeThreads)
+            val previous = detectMainInfo
+            detectMainInfo = replacement
+            previous.close()
+            cheaperEntityVariants = cheaperEntityVariants.drop(1)
+            DiagnosticLog.event("engine.entity_model", "median_ms=$median switched_to=${next.width}x${next.height}")
+            PylaLog.p(TAG, "entity inference median ${median}ms > ${EntityModelVariants.BUDGET_MS}ms: " +
+                "switched to ${next.width}x${next.height}")
+        } catch (t: Throwable) {
+            cheaperEntityVariants = emptyList()
+            DiagnosticLog.failure("engine", "entity_model", "tier_switch_failed", t)
+        }
+    }
+
     private val tileDetectorClasses: List<String> get() = botConfig().getStringList("wall_model_classes", listOf("wall", "bush", "close_bush"))
     private val centeredWallDetection: Boolean get() = PylaUtils.configBool(botConfig().opt("centered_wall_detection"), false)
     private val configuredTerrainFile = File(tileDetectorModelPath).let {
@@ -91,10 +207,14 @@ class Play(
     // model stays a box model; a custom semantic model requires an explicit config declaration.
     private val useSemanticTerrain = resolvedTerrainFile.canonicalFile != configuredTerrainFile.canonicalFile ||
         PylaUtils.configBool(botConfig().opt("semantic_terrain_model"), false)
-    private val detectTileDetector: Detect? = if (!PylaUtils.configBool(PylaConfig.load("cfg/bot_config.toml").opt("centered_wall_detection"), false))
+    private var detectTileDetector: Detect? = if (!PylaUtils.configBool(PylaConfig.load("cfg/bot_config.toml").opt("centered_wall_detection"), false))
+        createTileDetector(tune = false) else null
+
+    private fun createTileDetector(tune: Boolean): Detect =
         Detect(resolvedTerrainFile.absolutePath, classes = tileDetectorClasses,
             telemetryRole = PerceptionPerformanceTelemetry.ROLE_TILE,
-            semanticTerrain = useSemanticTerrain, terrainTileSize = botConfig().getDouble("perceived_tile_size", 54.0)) else null
+            semanticTerrain = useSemanticTerrain, terrainTileSize = botConfig().getDouble("perceived_tile_size", 54.0),
+            autoTune = tune)
     private val detectCenteredTileDetector: Detect? = if (PylaUtils.configBool(PylaConfig.load("cfg/bot_config.toml").opt("centered_wall_detection"), false))
         Detect(closeTileDetectorModelPath, classes = botConfig().getStringList("wall_model_classes", listOf("wall", "bush", "close_bush")),
             telemetryRole = PerceptionPerformanceTelemetry.ROLE_TILE_CENTERED) else null
@@ -134,7 +254,16 @@ class Play(
 
     var currentBrawler: String? = null
     private var lastTerrain = TerrainObservation()
+    /** True until a saved attack-control calibration made the per-frame search unnecessary. */
+    private var attackControlSearchPending = true
+    private var terrainDeferrals = 0
+    private var lastClassified: String = "lobby" // a menu verdict is never reused
+    private var lastClassifiedFrameMs = 0L
+    private var lastClassifyCostMs = 0L
+    private var classifyReuses = 0
     private var timeSinceWallsChecked: Double = 0.0
+    /** Wall time of the most recent terrain pass; stretches the refresh interval on slow devices. */
+    private var lastTerrainCostMs: Long = 0L
     private var timeSincePlayerLastFound: Double = nowSec()
     private var timeSinceGadgetChecked: Double = nowSec()
     private var timeSinceHyperchargeChecked: Double = nowSec()
@@ -726,7 +855,8 @@ class Play(
         val currentTime = nowSec()
         val detectStarted = monotonicNowMs()
         var data: MutableMap<String, MutableList<FloatArray>> = getMainData(frame)
-        DiagnosticLog.sample("gameplay.pipeline", "detect_ms=${monotonicNowMs()-detectStarted}")
+        val detectMs = monotonicNowMs() - detectStarted
+        DiagnosticLog.sample("gameplay.pipeline", "detect_ms=$detectMs")
 
         // Observe raw detections before the missing-player path discards them.
         DiagnosticLog.event("detection.player_presence", "present=${!data["player"].isNullOrEmpty()}")
@@ -742,7 +872,17 @@ class Play(
         // "unknown" may only continue observation when the current frame itself is not a known menu
         // screen; a known menu is positive evidence that gameplay is not running.
         var reportedState: String? = null
-        val current = classifyFrame(frame)
+        val current = if (InferenceTuner.reuseMenuVerdict(lastClassifyCostMs, isMenuScreen(lastClassified),
+                capturedAtMs - lastClassifiedFrameMs, classifyReuses)) {
+            classifyReuses++
+            lastClassified
+        } else {
+            val classifyStarted = monotonicNowMs()
+            classifyFrame(frame).also {
+                lastClassifyCostMs = monotonicNowMs() - classifyStarted
+                lastClassified = it; lastClassifiedFrameMs = capturedAtMs; classifyReuses = 0
+            }
+        }
         reportedState = current
         val statePermitted = (state == "match" || state == "unknown") && !isMenuScreen(current)
 
@@ -770,6 +910,8 @@ class Play(
             return
         }
         maybeReportObservedState("match", nowMs, onStateChange)
+        // Only admitted in-match frames count: loading screens and menus load the CPU differently.
+        adaptEntityTier(detectMs)
         if (closed || Thread.currentThread().isInterrupted || !inputAllowed()) {
             PipelineTimingTelemetry.interruption("INPUT_DISABLED")
             resetCombat()
@@ -780,10 +922,17 @@ class Play(
 
         // Denied/loading frames need no wall inference. Admitted planning still uses current walls.
         val wallsStarted = monotonicNowMs()
-        if (currentTime - timeSinceWallsChecked > wallsTresholdSec) {
+        val terrainDue = currentTime - timeSinceWallsChecked > InferenceTuner.terrainIntervalSec(wallsTresholdSec, lastTerrainCostMs)
+        val expectedTerrainMs = maxOf(lastTerrainCostMs, detectTileDetector?.tunedMedianMs ?: 0L)
+        val deferTerrain = terrainDue &&
+            InferenceTuner.deferTerrain(attackControlSearchPending, expectedTerrainMs, terrainDeferrals)
+        if (deferTerrain) terrainDeferrals++
+        if (terrainDue && !deferTerrain) {
+            terrainDeferrals = 0
             val td = getTileData(frame, data["player"])
             lastTerrain = processTileData(td)
             timeSinceWallsChecked = currentTime
+            lastTerrainCostMs = monotonicNowMs() - wallsStarted
         }
         lastTerrain.populate(data)
         DiagnosticLog.sample("gameplay.walls", "duration_ms=${monotonicNowMs()-wallsStarted}")
@@ -835,6 +984,12 @@ class Play(
         // it before every detection, so a trace read here belongs to the call above. No decision,
         // timestamp or gate reads these values.
         recordAttack(runCatching { AttackButtonDetector.lastTrace() }.getOrNull())
+        // Learning needs the control on two distinct fresh captures. On a slow device consecutive
+        // loops are 1.5-2.5 s apart and a single unclear frame in between restarted the pair, so
+        // the control was observed many times but never learned. After a first hit the next
+        // capture is therefore checked right away instead of one whole loop later.
+        val confirmation = if (savedAttackPoint == null && attackPoint != null)
+            confirmAttackControl(capturedAtMs, frame.cols(), frame.rows()) else null
         synchronized(this) {
             if (frameGeneration != combatGeneration || closed || issuingThread.isInterrupted || !inputAllowed() ||
                 gameplayGeometry != InputCoordinates.geometryGeneration) return
@@ -845,12 +1000,16 @@ class Play(
                 releaseAttackInput("attack_calibration_revoked")
                 return
             }
+            attackControlSearchPending = savedAttackPoint == null
             if (savedAttackPoint == null) {
                 val learned = SavedAttackButtonCalibration.observeTemplate(
                     calibrationLease, attackPoint, capturedAtMs, monotonicNowMs(),
                 )
+                val confirmed = if (learned == null && confirmation != null) SavedAttackButtonCalibration.observeTemplate(
+                    calibrationLease, confirmation.first, confirmation.second, monotonicNowMs(),
+                ) else null
                 DiagnosticLog.event("attack.calibration",
-                    "status=${if (learned != null) "learned_persistence_pending" else "awaiting_template_pair"}")
+                    "status=${if (learned != null || confirmed != null) "learned_persistence_pending" else "awaiting_template_pair"}")
             }
             activeAttackCalibrationRevision = calibrationLease.revision
             // The same two distinct fresh captures feed the existing temporal button gate. The
@@ -969,6 +1128,27 @@ class Play(
     internal var calibrationRevisionNow: () -> Long = SavedAttackButtonCalibration::revision
     internal var resetAttackCalibrationObservations: () -> Unit = SavedAttackButtonCalibration::resetObservations
     internal var locateAttackButton: (Mat) -> AttackButtonPoint? = AttackButtonDetector::detectForCalibration
+
+    /**
+     * Second observation for attack-control learning, taken from the newest capture. Returns the
+     * recognised control and its capture time, or null when there is no newer same-size frame,
+     * the frame is not plain gameplay any more, or the control is not recognised in it. It only
+     * feeds the learning pair; it grants no input authority.
+     */
+    private fun confirmAttackControl(firstCapturedAtMs: Long, width: Int, height: Int): Pair<AttackButtonPoint, Long>? {
+        return try {
+            val next = windowController.screenshot()
+            if (next.capturedAtMs <= firstCapturedAtMs || next.width != width || next.height != height) return null
+            val mat = PylaUtils.frameToMat(next)
+            try {
+                if (isMenuScreen(StateFinder.getState(mat))) return null
+                locateAttackButton(mat)?.let { it to next.capturedAtMs }
+            } finally { mat.release() }
+        } catch (t: Exception) {
+            DiagnosticLog.failure("combat", "attack_confirmation", "threw", t)
+            null
+        }
+    }
 
     /**
      * Adapter from the attack detector's immutable per-call trace to the fixed telemetry schema.

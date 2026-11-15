@@ -50,8 +50,11 @@ object InputCoordinates {
     fun toScreenX(x: Float): Float = if (screenW > 0) x * screenW / captureW else x
     fun toScreenY(y: Float): Float = if (screenH > 0) y * screenH / captureH else y
 
+    /** Game UI scale: height-based on 16:9 and wider, width-based on narrower frames. */
+    private val uiUnit: Float get() = UiLayout.unit(captureW, captureH).toFloat()
+
     fun mapX(baseX: Int, anchor: Anchor): Int {
-        val hr = heightRatio
+        val hr = if (UiLayout.isNarrow(captureW, captureH)) uiUnit else heightRatio
         return when (anchor) {
             Anchor.LEFT -> (baseX * hr).toInt()
             Anchor.CENTER -> (captureW / 2f + (baseX - BASE_W / 2f) * hr).toInt()
@@ -59,7 +62,9 @@ object InputCoordinates {
         }
     }
 
-    fun mapY(baseY: Int): Int = (baseY * heightRatio).toInt()
+    fun mapY(baseY: Int): Int =
+        if (UiLayout.isNarrow(captureW, captureH)) UiLayout.y(baseY.toDouble(), captureW, captureH).toInt()
+        else (baseY * heightRatio).toInt()
 
     fun press(key: String): Pair<Int, Int> {
         val fallback = pressSpots[key] ?: return (-1 to -1)
@@ -74,7 +79,9 @@ object InputCoordinates {
         return mapX(spot.x, spot.anchor) to mapY(spot.y)
     }
 
-    fun joystick(): Pair<Float, Float> = (220f * heightRatio) to (870f * heightRatio)
+    fun joystick(): Pair<Float, Float> =
+        if (UiLayout.isNarrow(captureW, captureH)) (220f * uiUnit) to UiLayout.y(870.0, captureW, captureH).toFloat()
+        else (220f * heightRatio) to (870f * heightRatio)
 
     val captureWidth: Int get() = captureW
     val captureHeight: Int get() = captureH

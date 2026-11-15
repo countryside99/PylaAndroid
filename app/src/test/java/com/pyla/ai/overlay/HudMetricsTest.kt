@@ -28,13 +28,16 @@ class HudMetricsTest {
     }
 
     @Test fun overflowMarkersFitTheFixedColumnBudget() {
-        assertEquals(">999ms", HudMetrics.ms(5_000.0))
+        assertEquals(">9999ms", HudMetrics.ms(50_000.0))
         assertEquals(">9999ms", HudMetrics.frameAge(20_000L))
         assertEquals(">999", HudMetrics.ips(4_000.0))
     }
 
     @Test fun overflowIsMarkedInsteadOfPretendingToBeAnExactLowerMeasurement() {
-        assertEquals(">999ms", HudMetrics.ms(1_500.0))
+        assertEquals("1500ms", HudMetrics.ms(1_500.0))
+        assertEquals("1123ms", HudMetrics.ms(1_123.4))
+        assertEquals("9999ms", HudMetrics.ms(9_999.0))
+        assertEquals(">9999ms", HudMetrics.ms(10_000.0))
         assertEquals(">9999ms", HudMetrics.frameAge(12_000L))
         assertEquals(">999", HudMetrics.ips(1_000.0))
         assertEquals("999 ms", HudMetrics.ms(999.0))

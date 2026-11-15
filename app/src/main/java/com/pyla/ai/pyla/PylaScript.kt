@@ -134,7 +134,20 @@ class PylaScript(
     fun runBounded(
         context: Map<String, Any>,
         cancelled: () -> Boolean = { false },
-    ): PylaRunResult = runBoundedWith(context, PyExecutionBudget(cancelled = cancelled))
+    ): PylaRunResult = runBoundedWith(context, PyExecutionBudget(cancelled = cancelled, clock = executionClock()))
+
+    /**
+     * Clock for the 25 ms script deadline: CPU time of the running thread where the platform
+     * provides it. The deadline exists to stop a script that computes too much; measured on wall
+     * time it also fired when the thread was merely descheduled - on a busy low-end CPU a 2 ms
+     * tick (about 130 steps) was seen at 27-50 ms and one decision in twenty was discarded. The
+     * step, collection and recursion limits are unchanged. Falls back to the monotonic wall
+     * clock when thread CPU time is unavailable; one run never mixes both.
+     */
+    private fun executionClock(): () -> Long {
+        val cpuTimeAvailable = try { android.os.Debug.threadCpuTimeNanos() > 0L } catch (_: Throwable) { false }
+        return if (cpuTimeAvailable) { { android.os.Debug.threadCpuTimeNanos() } } else { { System.nanoTime() } }
+    }
 
     /** Budget/clock seam for focused tests. Production callers use [runBounded]. */
     internal fun runBoundedWith(context: Map<String, Any>, budget: PyExecutionBudget): PylaRunResult {
