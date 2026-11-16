@@ -30,8 +30,8 @@ android {
         applicationId = "com.pyla.ai"
         minSdk = 26
         targetSdk = 34
-        versionCode = 40100
-        versionName = "4.1.0"
+        versionCode = 40101
+        versionName = "4.1.1"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
